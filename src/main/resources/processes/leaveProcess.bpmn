@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:activiti="http://activiti.org/bpmn" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" typeLanguage="http://www.w3.org/2001/XMLSchema" expressionLanguage="http://www.w3.org/1999/XPath" targetNamespace="http://www.activiti.org/test">
+  <process id="leaveApprovalProcess" name="Leave Approval Process" isExecutable="true">
+    <startEvent id="startevent1" name="Start"></startEvent>
+    <sequenceFlow id="flow1" sourceRef="startevent1" targetRef="servicetask_init"></sequenceFlow>
+
+    <!-- Initialize Leave Process -->
+    <serviceTask id="servicetask_init" name="Initialize Leave Process" activiti:expression="${leaveWorkflowServiceImpl.initializeLeaveProcess(execution)}"></serviceTask>
+    <sequenceFlow id="flow2" sourceRef="servicetask_init" targetRef="servicetask_notify_manager"></sequenceFlow>
+
+    <!-- Notify Manager -->
+    <serviceTask id="servicetask_notify_manager" name="Notify Manager" activiti:expression="${leaveWorkflowServiceImpl.notifyManager(execution)}"></serviceTask>
+    <sequenceFlow id="flow3" sourceRef="servicetask_notify_manager" targetRef="usertask_manager"></sequenceFlow>
+
+    <!-- Manager Approval Task -->
+    <userTask id="usertask_manager" name="Manager Approval" activiti:assignee="${managerEmail}"></userTask>
+    <sequenceFlow id="flow4" sourceRef="usertask_manager" targetRef="gateway_manager_decision"></sequenceFlow>
+
+    <!-- Manager Decision Gateway -->
+    <exclusiveGateway id="gateway_manager_decision" name="Manager Decision"></exclusiveGateway>
+
+    <!-- Manager Approved All -->
+    <sequenceFlow id="flow_mgr_approve_all" name="Approve All" sourceRef="gateway_manager_decision" targetRef="servicetask_mgr_approve_all">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${managerDecision == 'APPROVE_ALL'}]]></conditionExpression>
+    </sequenceFlow>
+    <serviceTask id="servicetask_mgr_approve_all" name="Process Manager Approval" activiti:expression="${leaveWorkflowServiceImpl.processManagerApproval(execution)}"></serviceTask>
+    <sequenceFlow id="flow_mgr_approve_to_admin_check" sourceRef="servicetask_mgr_approve_all" targetRef="gateway_admin_required"></sequenceFlow>
+
+    <!-- Manager Partial Approval -->
+    <sequenceFlow id="flow_mgr_partial" name="Partial Approval" sourceRef="gateway_manager_decision" targetRef="servicetask_mgr_partial">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${managerDecision == 'PARTIAL'}]]></conditionExpression>
+    </sequenceFlow>
+    <serviceTask id="servicetask_mgr_partial" name="Process Manager Partial" activiti:expression="${leaveWorkflowServiceImpl.processManagerPartial(execution)}"></serviceTask>
+    <sequenceFlow id="flow_mgr_partial_to_admin_check" sourceRef="servicetask_mgr_partial" targetRef="gateway_admin_required"></sequenceFlow>
+
+    <!-- Manager Rejected All -->
+    <sequenceFlow id="flow_mgr_reject_all" name="Reject All" sourceRef="gateway_manager_decision" targetRef="servicetask_mgr_reject_all">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${managerDecision == 'REJECT_ALL'}]]></conditionExpression>
+    </sequenceFlow>
+    <serviceTask id="servicetask_mgr_reject_all" name="Process Manager Rejection" activiti:expression="${leaveWorkflowServiceImpl.processManagerRejection(execution)}"></serviceTask>
+    <sequenceFlow id="flow_mgr_reject_to_end" sourceRef="servicetask_mgr_reject_all" targetRef="servicetask_finalize"></sequenceFlow>
+
+    <!-- Check if Admin Required -->
+    <exclusiveGateway id="gateway_admin_required" name="Admin Required?"></exclusiveGateway>
+    <sequenceFlow id="flow_admin_required_yes" name="Admin Required" sourceRef="gateway_admin_required" targetRef="servicetask_notify_admin">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${adminRequired == true}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_admin_required_no" name="No Admin Required" sourceRef="gateway_admin_required" targetRef="servicetask_finalize">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${adminRequired == false}]]></conditionExpression>
+    </sequenceFlow>
+
+    <!-- Notify Admin -->
+    <serviceTask id="servicetask_notify_admin" name="Notify Admin" activiti:expression="${leaveWorkflowServiceImpl.notifyAdmin(execution)}"></serviceTask>
+    <sequenceFlow id="flow5" sourceRef="servicetask_notify_admin" targetRef="usertask_admin"></sequenceFlow>
+
+    <!-- Admin Approval Task with Reminder Timer -->
+    <userTask id="usertask_admin" name="Admin Approval" activiti:assignee="${adminEmail}">
+      <extensionElements>
+        <activiti:taskListener event="create" expression="${leaveWorkflowServiceImpl.scheduleReminder(execution)}"></activiti:taskListener>
+      </extensionElements>
+    </userTask>
+    <boundaryEvent id="boundary_reminder" name="Reminder 2 Days Before" attachedToRef="usertask_admin" cancelActivity="false">
+      <timerEventDefinition>
+        <timeDate>${reminderFireTime}</timeDate>
+      </timerEventDefinition>
+    </boundaryEvent>
+    <sequenceFlow id="flow_reminder" sourceRef="boundary_reminder" targetRef="servicetask_send_reminder"></sequenceFlow>
+    <serviceTask id="servicetask_send_reminder" name="Send Reminder Email" activiti:expression="${leaveWorkflowServiceImpl.sendReminderEmail(execution)}"></serviceTask>
+    <sequenceFlow id="flow_reminder_end" sourceRef="servicetask_send_reminder" targetRef="endevent_reminder"></sequenceFlow>
+    <endEvent id="endevent_reminder" name="Reminder Sent"></endEvent>
+
+    <sequenceFlow id="flow6" sourceRef="usertask_admin" targetRef="gateway_admin_decision"></sequenceFlow>
+
+    <!-- Admin Decision Gateway -->
+    <exclusiveGateway id="gateway_admin_decision" name="Admin Decision"></exclusiveGateway>
+
+    <!-- Admin Approved -->
+    <sequenceFlow id="flow_admin_approve" name="Approve" sourceRef="gateway_admin_decision" targetRef="servicetask_admin_approve">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${adminDecision == 'APPROVE_ALL'}]]></conditionExpression>
+    </sequenceFlow>
+    <serviceTask id="servicetask_admin_approve" name="Process Admin Approval" activiti:expression="${leaveWorkflowServiceImpl.processAdminApproval(execution)}"></serviceTask>
+    <sequenceFlow id="flow_admin_approve_to_finalize" sourceRef="servicetask_admin_approve" targetRef="servicetask_finalize"></sequenceFlow>
+
+    <!-- Admin Partial -->
+    <sequenceFlow id="flow_admin_partial" name="Partial" sourceRef="gateway_admin_decision" targetRef="servicetask_admin_partial">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${adminDecision == 'PARTIAL'}]]></conditionExpression>
+    </sequenceFlow>
+    <serviceTask id="servicetask_admin_partial" name="Process Admin Partial" activiti:expression="${leaveWorkflowServiceImpl.processAdminPartial(execution)}"></serviceTask>
+    <sequenceFlow id="flow_admin_partial_to_finalize" sourceRef="servicetask_admin_partial" targetRef="servicetask_finalize"></sequenceFlow>
+
+    <!-- Admin Rejected -->
+    <sequenceFlow id="flow_admin_reject" name="Reject" sourceRef="gateway_admin_decision" targetRef="servicetask_admin_reject">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${adminDecision == 'REJECT_ALL'}]]></conditionExpression>
+    </sequenceFlow>
+    <serviceTask id="servicetask_admin_reject" name="Process Admin Rejection" activiti:expression="${leaveWorkflowServiceImpl.processAdminRejection(execution)}"></serviceTask>
+    <sequenceFlow id="flow_admin_reject_to_finalize" sourceRef="servicetask_admin_reject" targetRef="servicetask_finalize"></sequenceFlow>
+
+    <!-- Finalize Process -->
+    <serviceTask id="servicetask_finalize" name="Finalize Leave Process" activiti:expression="${leaveWorkflowServiceImpl.finalizeLeaveProcess(execution)}"></serviceTask>
+    <sequenceFlow id="flow_finalize_to_end" sourceRef="servicetask_finalize" targetRef="endevent1"></sequenceFlow>
+
+    <endEvent id="endevent1" name="End"></endEvent>
+  </process>
+</definitions>
