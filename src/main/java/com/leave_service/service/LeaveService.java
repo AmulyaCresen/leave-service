@@ -312,12 +312,36 @@ public class LeaveService {
             .map(empLeave -> {
                 Map<String, Object> leaves = empLeave.getLeaves();
                 if (leaves != null && leaves.containsKey("approved_leaves")) {
+                    List<Map<String, Object>> approvedLeaves = (List<Map<String, Object>>) leaves.get("approved_leaves");
+                    
+                    // Enrich with trail data from leave table
+                    List<Map<String, Object>> enrichedLeaves = approvedLeaves.stream()
+                        .map(record -> {
+                            Long leaveId = ((Number) record.get("leaveId")).longValue();
+                            log.info("[getManagerLoggedLeaves] Fetching leave ID: {}", leaveId);
+                            Leave fullLeave = leaveRepository.findById(leaveId).orElse(null);
+                            if (fullLeave != null) {
+                                hydrateTransients(fullLeave);
+                                log.info("[getManagerLoggedLeaves] Leave {} has {} trail entries", leaveId, 
+                                    fullLeave.getTrail() != null ? fullLeave.getTrail().size() : 0);
+                                Map<String, Object> enriched = new HashMap<>(record);
+                                enriched.put("trail", fullLeave.getTrail());
+                                enriched.put("days", fullLeave.getDays());
+                                enriched.put("reason", fullLeave.getReason());
+                                return enriched;
+                            } else {
+                                log.warn("[getManagerLoggedLeaves] Leave {} not found in database", leaveId);
+                            }
+                            return record;
+                        })
+                        .collect(Collectors.toList());
+                    
                     Map<String, Object> result = new HashMap<>();
-                    result.put("approved_leaves", leaves.get("approved_leaves"));
+                    result.put("approved_leaves", enrichedLeaves);
                     result.put("managerName", empLeave.getFullName());
                     result.put("managerEmail", empLeave.getEmailId());
                     log.info("[getManagerLoggedLeaves] Found {} approved leaves for manager: {}", 
-                        ((List<?>) leaves.get("approved_leaves")).size(), managerEmail);
+                        enrichedLeaves.size(), managerEmail);
                     return result;
                 }
                 log.info("[getManagerLoggedLeaves] No approved leaves found for manager: {}", managerEmail);
@@ -333,12 +357,36 @@ public class LeaveService {
             .map(empLeave -> {
                 Map<String, Object> leaves = empLeave.getLeaves();
                 if (leaves != null && leaves.containsKey("approved_leaves")) {
+                    List<Map<String, Object>> approvedLeaves = (List<Map<String, Object>>) leaves.get("approved_leaves");
+                    
+                    // Enrich with trail data from leave table
+                    List<Map<String, Object>> enrichedLeaves = approvedLeaves.stream()
+                        .map(record -> {
+                            Long leaveId = ((Number) record.get("leaveId")).longValue();
+                            log.info("[getAdminLoggedLeaves] Fetching leave ID: {}", leaveId);
+                            Leave fullLeave = leaveRepository.findById(leaveId).orElse(null);
+                            if (fullLeave != null) {
+                                hydrateTransients(fullLeave);
+                                log.info("[getAdminLoggedLeaves] Leave {} has {} trail entries", leaveId, 
+                                    fullLeave.getTrail() != null ? fullLeave.getTrail().size() : 0);
+                                Map<String, Object> enriched = new HashMap<>(record);
+                                enriched.put("trail", fullLeave.getTrail());
+                                enriched.put("days", fullLeave.getDays());
+                                enriched.put("reason", fullLeave.getReason());
+                                return enriched;
+                            } else {
+                                log.warn("[getAdminLoggedLeaves] Leave {} not found in database", leaveId);
+                            }
+                            return record;
+                        })
+                        .collect(Collectors.toList());
+                    
                     Map<String, Object> result = new HashMap<>();
-                    result.put("approved_leaves", leaves.get("approved_leaves"));
+                    result.put("approved_leaves", enrichedLeaves);
                     result.put("adminName", empLeave.getFullName());
                     result.put("adminEmail", empLeave.getEmailId());
                     log.info("[getAdminLoggedLeaves] Found {} approved leaves for admin: {}", 
-                        ((List<?>) leaves.get("approved_leaves")).size(), adminEmail);
+                        enrichedLeaves.size(), adminEmail);
                     return result;
                 }
                 log.info("[getAdminLoggedLeaves] No approved leaves found for admin: {}", adminEmail);
