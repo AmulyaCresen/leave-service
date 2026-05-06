@@ -486,6 +486,22 @@ public class LeaveService {
         return saved;
     }
 
+    public Map<String, Object> getLeaveBalance(String email) {
+        return employeeLeaveRepository.findByEmailId(email)
+            .map(empLeave -> {
+                Map<String, Object> leaves = empLeave.getLeaves();
+                if (leaves != null) {
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("employeeName", empLeave.getFullName());
+                    result.put("email", empLeave.getEmailId());
+                    result.put("leaveBalance", leaves);
+                    return result;
+                }
+                return new HashMap<String, Object>();
+            })
+            .orElse(new HashMap<>());
+    }
+
     @Async
     public void startLeaveProcessAsync(Leave leave, String managerEmail, String adminEmail) {
         leaveProcessService.startLeaveProcess(leave, managerEmail, adminEmail);

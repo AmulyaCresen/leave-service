@@ -36,6 +36,17 @@ spring:
           starttls:
             enable: true
 
+  # Spring AI - Ollama (llama3.2 for function calling)
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: llama3.2
+        options:
+          temperature: 0.0
+          num-ctx: 8192
+          num-predict: 512
+
 app:
   mail:
     sender: amulyachodisetty2004@gmail.com
