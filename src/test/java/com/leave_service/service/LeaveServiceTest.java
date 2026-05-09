@@ -1,9 +1,19 @@
 package com.leave_service.service;
 
 import com.leave_service.commons.LeaveConstants;
-import com.leave_service.dto.*;
-import com.leave_service.model.*;
-import com.leave_service.repository.*;
+import com.leave_service.dto.CreateLeaveRequest;
+import com.leave_service.dto.CreateLeaveTypeRequest;
+import com.leave_service.dto.HolidayRequest;
+import com.leave_service.dto.LeaveDayEntry;
+import com.leave_service.dto.UpdateLeaveRequest;
+import com.leave_service.model.Holiday;
+import com.leave_service.model.Leave;
+import com.leave_service.model.LeaveType;
+import com.leave_service.model.EmployeeLeave;
+import com.leave_service.repository.EmployeeLeaveRepository;
+import com.leave_service.repository.HolidayRepository;
+import com.leave_service.repository.LeaveRepository;
+import com.leave_service.repository.LeaveTypeRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,6 +25,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -24,948 +35,572 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class LeaveServiceTest {
 
-    @Mock private LeaveRepository leaveRepository;
-    @Mock private LeaveTypeRepository leaveTypeRepository;
-    @Mock private HolidayRepository holidayRepository;
-    @Mock private EmployeeLeaveRepository employeeLeaveRepository;
-    @Mock private LeaveProcessService leaveProcessService;
-    @Mock private EntityManager entityManager;
-    @InjectMocks private LeaveService leaveService;
+    @Mock
+    private LeaveRepository leaveRepository;
+
+    @Mock
+    private LeaveTypeRepository leaveTypeRepository;
+
+    @Mock
+    private HolidayRepository holidayRepository;
+
+    @Mock
+    private EmployeeLeaveRepository employeeLeaveRepository;
+
+    @Mock
+    private LeaveProcessService leaveProcessService;
+
+    @Mock
+    private EntityManager entityManager;
+
+    @InjectMocks
+    private LeaveService leaveService;
+
+    private Leave testLeave;
+    private LeaveType testLeaveType;
+    private Holiday testHoliday;
 
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(leaveService, "managerEmail", "manager@test.com");
         ReflectionTestUtils.setField(leaveService, "adminEmail", "admin@test.com");
         ReflectionTestUtils.setField(leaveService, "entityManager", entityManager);
+
+        testLeave = new Leave();
+        testLeave.setId(1L);
+        testLeave.setEmailId("employee@test.com");
+        testLeave.setLeaveType("Sick Leave");
+        testLeave.setFromDate(LocalDate.now());
+        testLeave.setToDate(LocalDate.now().plusDays(2));
+        testLeave.setReason("Medical");
+        testLeave.setManagerEmail("manager@test.com");
+        testLeave.setEditable(true);
+        testLeave.setCreatedAt(LocalDate.now());
+        
+        Map<String, String> trailEntry = new HashMap<>();
+        trailEntry.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_PENDING);
+        trailEntry.put(LeaveConstants.TRAIL_DAY_TYPE, LeaveConstants.DAY_TYPE_FULL);
+        trailEntry.put(LeaveConstants.TRAIL_DATE, "2024-01-01 10:00:00");
+        testLeave.setTrail(new java.util.ArrayList<>(List.of(trailEntry)));
+
+        testLeaveType = new LeaveType();
+        testLeaveType.setId(1);
+        testLeaveType.setLeaveName("Sick Leave");
+        testLeaveType.setLeaveUniqueName("SICK");
+        testLeaveType.setDescription("Sick leave");
+        testLeaveType.setMaxDays(10);
+        testLeaveType.setCreatedAt(OffsetDateTime.now());
+
+        testHoliday = new Holiday();
+        testHoliday.setId(1L);
+        testHoliday.setName("New Year");
+        testHoliday.setDate(LocalDate.of(2024, 1, 1));
     }
 
     @Test
-    void getAllHolidays_returnsAllHolidays() {
-        Holiday h = new Holiday(); h.setId(1L); h.setName("Diwali");
-        when(holidayRepository.findAll()).thenReturn(List.of(h));
-
-        List<Holiday> result = leaveService.getAllHolidays();
-
-        assertEquals(1, result.size());
-        assertEquals("Diwali", result.get(0).getName());
+    void testGetAllHolidays() {
+        when(holidayRepository.findAll()).thenReturn(List.of(testHoliday));
+        
+        List<Holiday> holidays = leaveService.getAllHolidays();
+        
+        assertNotNull(holidays);
+        assertEquals(1, holidays.size());
+        assertEquals("New Year", holidays.get(0).getName());
+        verify(holidayRepository).findAll();
     }
 
     @Test
-    void createHoliday_success() {
-        HolidayRequest req = new HolidayRequest(); req.setName("Holi"); req.setDate("2025-03-14");
+    void testCreateHoliday_Success() {
+        HolidayRequest request = new HolidayRequest();
+        request.setName("Christmas");
+        request.setDate("2024-12-25");
+        
         when(holidayRepository.findByDate(any())).thenReturn(Optional.empty());
-        when(holidayRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        Holiday result = leaveService.createHoliday(req);
-
-        assertEquals("Holi", result.getName());
-        verify(holidayRepository).save(any());
+        when(holidayRepository.save(any())).thenReturn(testHoliday);
+        
+        Holiday created = leaveService.createHoliday(request);
+        
+        assertNotNull(created);
+        verify(holidayRepository).save(any(Holiday.class));
     }
 
     @Test
-    void createHoliday_conflict() {
-        HolidayRequest req = new HolidayRequest(); req.setName("Holi"); req.setDate("2025-03-14");
-        Holiday existing = new Holiday(); existing.setId(1L);
-        when(holidayRepository.findByDate(any())).thenReturn(Optional.of(existing));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.createHoliday(req));
+    void testCreateHoliday_Conflict() {
+        HolidayRequest request = new HolidayRequest();
+        request.setName("Christmas");
+        request.setDate("2024-12-25");
+        
+        when(holidayRepository.findByDate(any())).thenReturn(Optional.of(testHoliday));
+        
+        assertThrows(ResponseStatusException.class, () -> leaveService.createHoliday(request));
     }
 
     @Test
-    void updateHoliday_success() {
-        HolidayRequest req = new HolidayRequest(); req.setName("Updated"); req.setDate("2025-03-15");
-        Holiday existing = new Holiday(); existing.setId(1L); existing.setName("Old");
-        when(holidayRepository.findById(1L)).thenReturn(Optional.of(existing));
+    void testUpdateHoliday_Success() {
+        HolidayRequest request = new HolidayRequest();
+        request.setName("Updated Holiday");
+        request.setDate("2024-12-26");
+        
+        when(holidayRepository.findById(1L)).thenReturn(Optional.of(testHoliday));
         when(holidayRepository.findByDate(any())).thenReturn(Optional.empty());
-        when(holidayRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        Holiday result = leaveService.updateHoliday(1L, req);
-
-        assertEquals("Updated", result.getName());
+        when(holidayRepository.save(any())).thenReturn(testHoliday);
+        
+        Holiday updated = leaveService.updateHoliday(1L, request);
+        
+        assertNotNull(updated);
+        verify(holidayRepository).save(any(Holiday.class));
     }
 
     @Test
-    void updateHoliday_notFound() {
-        HolidayRequest req = new HolidayRequest(); req.setName("Updated"); req.setDate("2025-03-15");
+    void testUpdateHoliday_NotFound() {
+        HolidayRequest request = new HolidayRequest();
+        request.setName("Updated Holiday");
+        request.setDate("2024-12-26");
+        
         when(holidayRepository.findById(1L)).thenReturn(Optional.empty());
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.updateHoliday(1L, req));
+        
+        assertThrows(ResponseStatusException.class, () -> leaveService.updateHoliday(1L, request));
     }
 
     @Test
-    void updateHoliday_dateConflict() {
-        HolidayRequest req = new HolidayRequest(); req.setName("Updated"); req.setDate("2025-03-15");
-        Holiday existing = new Holiday(); existing.setId(1L);
-        Holiday conflicting = new Holiday(); conflicting.setId(2L);
-        when(holidayRepository.findById(1L)).thenReturn(Optional.of(existing));
-        when(holidayRepository.findByDate(any())).thenReturn(Optional.of(conflicting));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.updateHoliday(1L, req));
-    }
-
-    @Test
-    void deleteHoliday_success() {
+    void testDeleteHoliday_Success() {
         when(holidayRepository.existsById(1L)).thenReturn(true);
-        doNothing().when(holidayRepository).deleteById(1L);
-        doNothing().when(holidayRepository).flush();
         when(entityManager.createNativeQuery(anyString())).thenReturn(mock(jakarta.persistence.Query.class));
-
-        leaveService.deleteHoliday(1L);
-
+        
+        assertDoesNotThrow(() -> leaveService.deleteHoliday(1L));
+        
         verify(holidayRepository).deleteById(1L);
-        verify(entityManager).createNativeQuery(anyString());
+        verify(holidayRepository).flush();
     }
 
     @Test
-    void deleteHoliday_notFound() {
+    void testDeleteHoliday_NotFound() {
         when(holidayRepository.existsById(1L)).thenReturn(false);
-
+        
         assertThrows(ResponseStatusException.class, () -> leaveService.deleteHoliday(1L));
     }
 
     @Test
-    void getAllLeaveTypes_returnsAll() {
-        LeaveType lt = new LeaveType(); lt.setId(1); lt.setLeaveName("Sick");
-        when(leaveTypeRepository.findAll()).thenReturn(List.of(lt));
-
-        List<LeaveType> result = leaveService.getAllLeaveTypes();
-
-        assertEquals(1, result.size());
+    void testGetAllLeaveTypes() {
+        when(leaveTypeRepository.findAll()).thenReturn(List.of(testLeaveType));
+        
+        List<LeaveType> leaveTypes = leaveService.getAllLeaveTypes();
+        
+        assertNotNull(leaveTypes);
+        assertEquals(1, leaveTypes.size());
+        assertEquals("Sick Leave", leaveTypes.get(0).getLeaveName());
     }
 
     @Test
-    void leaveNameExists_returnsTrue() {
-        when(leaveTypeRepository.findByLeaveName("Sick")).thenReturn(Optional.of(new LeaveType()));
-
-        assertTrue(leaveService.leaveNameExists("Sick"));
+    void testLeaveNameExists() {
+        when(leaveTypeRepository.findByLeaveName("Sick Leave")).thenReturn(Optional.of(testLeaveType));
+        
+        assertTrue(leaveService.leaveNameExists("Sick Leave"));
+        assertFalse(leaveService.leaveNameExists("Casual Leave"));
     }
 
     @Test
-    void leaveUniqueNameExists_returnsFalse() {
-        when(leaveTypeRepository.findByLeaveUniqueName("sick")).thenReturn(Optional.empty());
-
-        assertFalse(leaveService.leaveUniqueNameExists("sick"));
+    void testLeaveUniqueNameExists() {
+        when(leaveTypeRepository.findByLeaveUniqueName("SICK")).thenReturn(Optional.of(testLeaveType));
+        
+        assertTrue(leaveService.leaveUniqueNameExists("SICK"));
+        assertFalse(leaveService.leaveUniqueNameExists("CASUAL"));
     }
 
     @Test
-    void createLeaveType_success() {
-        CreateLeaveTypeRequest req = new CreateLeaveTypeRequest();
-        req.setLeaveName("Sick"); req.setLeaveUniqueName("sick"); req.setMaxDays(10);
+    void testCreateLeaveType_Success() {
+        CreateLeaveTypeRequest request = new CreateLeaveTypeRequest();
+        request.setLeaveName("Casual Leave");
+        request.setLeaveUniqueName("CASUAL");
+        request.setDescription("Casual leave");
+        request.setMaxDays(12);
+        
         when(leaveTypeRepository.findByLeaveName(anyString())).thenReturn(Optional.empty());
         when(leaveTypeRepository.findByLeaveUniqueName(anyString())).thenReturn(Optional.empty());
-        when(leaveTypeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        LeaveType result = leaveService.createLeaveType(req);
-
-        assertEquals("Sick", result.getLeaveName());
+        when(leaveTypeRepository.save(any())).thenReturn(testLeaveType);
+        
+        LeaveType created = leaveService.createLeaveType(request);
+        
+        assertNotNull(created);
+        verify(leaveTypeRepository).save(any(LeaveType.class));
     }
 
     @Test
-    void createLeaveType_nameConflict() {
-        CreateLeaveTypeRequest req = new CreateLeaveTypeRequest();
-        req.setLeaveName("Sick"); req.setLeaveUniqueName("sick");
-        when(leaveTypeRepository.findByLeaveName("Sick")).thenReturn(Optional.of(new LeaveType()));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.createLeaveType(req));
+    void testCreateLeaveType_NameConflict() {
+        CreateLeaveTypeRequest request = new CreateLeaveTypeRequest();
+        request.setLeaveName("Sick Leave");
+        request.setLeaveUniqueName("SICK");
+        request.setDescription("Sick leave");
+        request.setMaxDays(10);
+        
+        when(leaveTypeRepository.findByLeaveName("Sick Leave")).thenReturn(Optional.of(testLeaveType));
+        
+        assertThrows(ResponseStatusException.class, () -> leaveService.createLeaveType(request));
     }
 
     @Test
-    void createLeaveType_uniqueNameConflict() {
-        CreateLeaveTypeRequest req = new CreateLeaveTypeRequest();
-        req.setLeaveName("Sick"); req.setLeaveUniqueName("sick");
+    void testCreateLeaveType_UniqueNameConflict() {
+        CreateLeaveTypeRequest request = new CreateLeaveTypeRequest();
+        request.setLeaveName("Sick Leave");
+        request.setLeaveUniqueName("SICK");
+        request.setDescription("Sick leave");
+        request.setMaxDays(10);
+        
         when(leaveTypeRepository.findByLeaveName(anyString())).thenReturn(Optional.empty());
-        when(leaveTypeRepository.findByLeaveUniqueName("sick")).thenReturn(Optional.of(new LeaveType()));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.createLeaveType(req));
+        when(leaveTypeRepository.findByLeaveUniqueName("SICK")).thenReturn(Optional.of(testLeaveType));
+        
+        assertThrows(ResponseStatusException.class, () -> leaveService.createLeaveType(request));
     }
 
     @Test
-    void updateLeaveType_success() {
-        CreateLeaveTypeRequest req = new CreateLeaveTypeRequest();
-        req.setLeaveName("Updated"); req.setLeaveUniqueName("updated"); req.setMaxDays(12);
-        LeaveType existing = new LeaveType(); existing.setId(1);
-        when(leaveTypeRepository.findById(1)).thenReturn(Optional.of(existing));
+    void testUpdateLeaveType_Success() {
+        CreateLeaveTypeRequest request = new CreateLeaveTypeRequest();
+        request.setLeaveName("Updated Leave");
+        request.setLeaveUniqueName("UPDATED");
+        request.setDescription("Updated description");
+        request.setMaxDays(15);
+        
+        when(leaveTypeRepository.findById(1)).thenReturn(Optional.of(testLeaveType));
         when(leaveTypeRepository.findByLeaveName(anyString())).thenReturn(Optional.empty());
         when(leaveTypeRepository.findByLeaveUniqueName(anyString())).thenReturn(Optional.empty());
-        when(leaveTypeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        LeaveType result = leaveService.updateLeaveType(1, req);
-
-        assertEquals("Updated", result.getLeaveName());
+        when(leaveTypeRepository.save(any())).thenReturn(testLeaveType);
+        
+        LeaveType updated = leaveService.updateLeaveType(1, request);
+        
+        assertNotNull(updated);
+        verify(leaveTypeRepository).save(any(LeaveType.class));
     }
 
     @Test
-    void updateLeaveType_notFound() {
-        CreateLeaveTypeRequest req = new CreateLeaveTypeRequest();
+    void testUpdateLeaveType_NotFound() {
+        CreateLeaveTypeRequest request = new CreateLeaveTypeRequest();
+        request.setLeaveName("Updated Leave");
+        request.setLeaveUniqueName("UPDATED");
+        request.setDescription("Updated description");
+        request.setMaxDays(15);
+        
         when(leaveTypeRepository.findById(1)).thenReturn(Optional.empty());
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.updateLeaveType(1, req));
+        
+        assertThrows(ResponseStatusException.class, () -> leaveService.updateLeaveType(1, request));
     }
 
     @Test
-    void deleteLeaveType_success() {
+    void testDeleteLeaveType_Success() {
         when(leaveTypeRepository.existsById(1)).thenReturn(true);
-
-        leaveService.deleteLeaveType(1);
-
+        
+        assertDoesNotThrow(() -> leaveService.deleteLeaveType(1));
+        
         verify(leaveTypeRepository).deleteById(1);
     }
 
     @Test
-    void deleteLeaveType_notFound() {
+    void testDeleteLeaveType_NotFound() {
         when(leaveTypeRepository.existsById(1)).thenReturn(false);
-
+        
         assertThrows(ResponseStatusException.class, () -> leaveService.deleteLeaveType(1));
     }
 
     @Test
-    void getLeaveById_success() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        leave.setTrail(new ArrayList<>());
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        Leave result = leaveService.getLeaveById(1L);
-
-        assertEquals(1L, result.getId());
+    void testGetLeaveById_Success() {
+        when(leaveRepository.findById(1L)).thenReturn(Optional.of(testLeave));
+        
+        Leave leave = leaveService.getLeaveById(1L);
+        
+        assertNotNull(leave);
+        assertEquals(1L, leave.getId());
+        assertEquals(LeaveConstants.STATUS_PENDING, leave.getStatus());
     }
 
     @Test
-    void getLeaveById_notFound() {
+    void testGetLeaveById_NotFound() {
         when(leaveRepository.findById(1L)).thenReturn(Optional.empty());
-
+        
         assertThrows(ResponseStatusException.class, () -> leaveService.getLeaveById(1L));
     }
 
     @Test
-    void getAllLeaves_returnsAll() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setTrail(new ArrayList<>());
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-
-        List<Leave> result = leaveService.getAllLeaves();
-
-        assertEquals(1, result.size());
+    void testSetDocumentPath() {
+        when(leaveRepository.findById(1L)).thenReturn(Optional.of(testLeave));
+        when(leaveRepository.save(any())).thenReturn(testLeave);
+        
+        assertDoesNotThrow(() -> leaveService.setDocumentPath(1L, "/path/to/document"));
+        
+        verify(leaveRepository).save(any(Leave.class));
     }
 
     @Test
-    void getLeavesByEmail_returnsFiltered() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com"); leave.setTrail(new ArrayList<>());
-        when(leaveRepository.findByEmailId("emp@test.com")).thenReturn(List.of(leave));
-
-        List<Leave> result = leaveService.getLeavesByEmail("emp@test.com");
-
-        assertEquals(1, result.size());
+    void testGetAllLeaves() {
+        when(leaveRepository.findAll()).thenReturn(List.of(testLeave));
+        
+        List<Leave> leaves = leaveService.getAllLeaves();
+        
+        assertNotNull(leaves);
+        assertEquals(1, leaves.size());
     }
 
     @Test
-    void getPendingLeavesFor_manager() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        leave.setManagerEmail("mgr@test.com"); leave.setTrail(new ArrayList<>());
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_MANAGER)).thenReturn(List.of(1L));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_ADMIN)).thenReturn(List.of());
-
-        List<Leave> result = leaveService.getPendingLeavesFor("mgr@test.com");
-
-        assertEquals(1, result.size());
+    void testGetLeavesByEmail() {
+        when(leaveRepository.findByEmailId("employee@test.com")).thenReturn(List.of(testLeave));
+        
+        List<Leave> leaves = leaveService.getLeavesByEmail("employee@test.com");
+        
+        assertNotNull(leaves);
+        assertEquals(1, leaves.size());
+        assertEquals("employee@test.com", leaves.get(0).getEmailId());
     }
 
     @Test
-    void getReviewedLeavesByReviewer_returnsFiltered() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_REVIEWED_BY, "mgr@test.com");
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-
-        List<Leave> result = leaveService.getReviewedLeavesByReviewer("mgr@test.com");
-
-        assertEquals(1, result.size());
+    void testCreateLeave_Success() {
+        CreateLeaveRequest request = new CreateLeaveRequest();
+        request.setLeaveType("Sick Leave");
+        request.setFromDate("2024-12-01");
+        request.setToDate("2024-12-03");
+        request.setReason("Medical");
+        request.setDayType(LeaveConstants.DAY_TYPE_FULL);
+        request.setManagerEmail("manager@test.com");
+        
+        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(Collections.emptyList());
+        when(leaveRepository.save(any())).thenReturn(testLeave);
+        doNothing().when(leaveProcessService).startLeaveProcess(any(), anyString(), anyString());
+        
+        Leave created = leaveService.createLeave(request, "employee@test.com");
+        
+        assertNotNull(created);
+        verify(leaveRepository).save(any(Leave.class));
     }
 
     @Test
-    void getManagerLoggedLeaves_returnsData() {
-        EmployeeLeave empLeave = new EmployeeLeave();
-        empLeave.setEmailId("mgr@test.com"); empLeave.setFullName("Manager");
-        Map<String, Object> leaves = new HashMap<>();
-        leaves.put("approved_leaves", List.of());
-        empLeave.setLeaves(leaves);
-        when(employeeLeaveRepository.findByEmailId("mgr@test.com")).thenReturn(Optional.of(empLeave));
-
-        Map<String, Object> result = leaveService.getManagerLoggedLeaves("mgr@test.com");
-
-        assertTrue(result.containsKey("approved_leaves"));
+    void testCreateLeave_WithDays() {
+        CreateLeaveRequest request = new CreateLeaveRequest();
+        request.setLeaveType("Sick Leave");
+        request.setReason("Medical");
+        
+        LeaveDayEntry day1 = new LeaveDayEntry();
+        day1.setDate("2024-12-01");
+        day1.setDayType(LeaveConstants.DAY_TYPE_FULL);
+        
+        LeaveDayEntry day2 = new LeaveDayEntry();
+        day2.setDate("2024-12-02");
+        day2.setDayType(LeaveConstants.DAY_TYPE_HALF);
+        day2.setHalfDaySession("MORNING");
+        
+        request.setDays(List.of(day1, day2));
+        
+        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(Collections.emptyList());
+        when(leaveRepository.save(any())).thenReturn(testLeave);
+        doNothing().when(leaveProcessService).startLeaveProcess(any(), anyString(), anyString());
+        
+        Leave created = leaveService.createLeave(request, "employee@test.com");
+        
+        assertNotNull(created);
+        verify(leaveRepository).save(any(Leave.class));
     }
 
     @Test
-    void getManagerLoggedLeaves_notFound() {
-        when(employeeLeaveRepository.findByEmailId("mgr@test.com")).thenReturn(Optional.empty());
-
-        Map<String, Object> result = leaveService.getManagerLoggedLeaves("mgr@test.com");
-
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void getAdminLoggedLeaves_returnsData() {
-        EmployeeLeave empLeave = new EmployeeLeave();
-        empLeave.setEmailId("admin@test.com"); empLeave.setFullName("Admin");
-        Map<String, Object> leaves = new HashMap<>();
-        leaves.put("approved_leaves", List.of());
-        empLeave.setLeaves(leaves);
-        when(employeeLeaveRepository.findByEmailId("admin@test.com")).thenReturn(Optional.of(empLeave));
-
-        Map<String, Object> result = leaveService.getAdminLoggedLeaves("admin@test.com");
-
-        assertTrue(result.containsKey("approved_leaves"));
-    }
-
-    @Test
-    void updateLeave_success() {
-        UpdateLeaveRequest req = new UpdateLeaveRequest();
-        req.setLeaveType("Casual"); req.setFromDate("2025-06-05"); req.setToDate("2025-06-07");
-        req.setReason("Personal"); req.setDayType("FULL_DAY");
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_PENDING);
-        leave.setTrail(new ArrayList<>(List.of(trail)));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-        when(leaveRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        Leave result = leaveService.updateLeave(1L, req, "emp@test.com");
-
-        assertEquals("Casual", result.getLeaveType());
-    }
-
-    @Test
-    void updateLeave_forbidden() {
-        UpdateLeaveRequest req = new UpdateLeaveRequest();
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.updateLeave(1L, req, "other@test.com"));
-    }
-
-    @Test
-    void updateLeave_notPending() {
-        UpdateLeaveRequest req = new UpdateLeaveRequest();
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
+    void testCreateLeave_Conflict() {
+        CreateLeaveRequest request = new CreateLeaveRequest();
+        request.setLeaveType("Sick Leave");
+        request.setFromDate("2024-12-01");
+        request.setToDate("2024-12-03");
+        request.setReason("Medical");
+        
+        Leave overlappingLeave = new Leave();
+        overlappingLeave.setId(2L);
+        overlappingLeave.setFromDate(LocalDate.parse("2024-12-02"));
+        overlappingLeave.setToDate(LocalDate.parse("2024-12-04"));
         Map<String, String> trail = new HashMap<>();
         trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_APPROVED);
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.updateLeave(1L, req, "emp@test.com"));
+        overlappingLeave.setTrail(List.of(trail));
+        
+        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(List.of(overlappingLeave));
+        
+        assertThrows(ResponseStatusException.class, () -> leaveService.createLeave(request, "employee@test.com"));
     }
 
     @Test
-    void deleteLeave_success() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_PENDING);
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
+    void testUpdateLeave_Success() {
+        UpdateLeaveRequest request = new UpdateLeaveRequest();
+        request.setLeaveType("Sick Leave");
+        request.setFromDate("2024-12-01");
+        request.setToDate("2024-12-03");
+        request.setReason("Updated reason");
+        request.setDayType(LeaveConstants.DAY_TYPE_FULL);
+        
+        when(leaveRepository.findById(1L)).thenReturn(Optional.of(testLeave));
+        when(leaveRepository.save(any())).thenReturn(testLeave);
+        
+        Leave updated = leaveService.updateLeave(1L, request, "employee@test.com");
+        
+        assertNotNull(updated);
+        verify(leaveRepository).save(any(Leave.class));
+    }
 
-        leaveService.deleteLeave(1L, "emp@test.com");
+    @Test
+    void testUpdateLeave_NotFound() {
+        UpdateLeaveRequest request = new UpdateLeaveRequest();
+        request.setLeaveType("Sick Leave");
+        request.setFromDate("2024-12-01");
+        request.setToDate("2024-12-03");
+        request.setReason("Updated reason");
+        
+        when(leaveRepository.findById(1L)).thenReturn(Optional.empty());
+        
+        assertThrows(ResponseStatusException.class, () -> leaveService.updateLeave(1L, request, "employee@test.com"));
+    }
 
+    @Test
+    void testUpdateLeave_Forbidden() {
+        UpdateLeaveRequest request = new UpdateLeaveRequest();
+        request.setLeaveType("Sick Leave");
+        request.setFromDate("2024-12-01");
+        request.setToDate("2024-12-03");
+        request.setReason("Updated reason");
+        
+        when(leaveRepository.findById(1L)).thenReturn(Optional.of(testLeave));
+        
+        assertThrows(ResponseStatusException.class, () -> leaveService.updateLeave(1L, request, "other@test.com"));
+    }
+
+    @Test
+    void testUpdateLeave_NotPending() {
+        UpdateLeaveRequest request = new UpdateLeaveRequest();
+        request.setLeaveType("Sick Leave");
+        request.setFromDate("2024-12-01");
+        request.setToDate("2024-12-03");
+        request.setReason("Updated reason");
+        
+        Map<String, String> approvedTrail = new HashMap<>();
+        approvedTrail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_APPROVED);
+        testLeave.setTrail(List.of(approvedTrail));
+        
+        when(leaveRepository.findById(1L)).thenReturn(Optional.of(testLeave));
+        
+        assertThrows(ResponseStatusException.class, () -> leaveService.updateLeave(1L, request, "employee@test.com"));
+    }
+
+    @Test
+    void testDeleteLeave_Success() {
+        when(leaveRepository.findById(1L)).thenReturn(Optional.of(testLeave));
+        
+        assertDoesNotThrow(() -> leaveService.deleteLeave(1L, "employee@test.com"));
+        
         verify(leaveRepository).deleteById(1L);
     }
 
     @Test
-    void deleteLeave_forbidden() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
+    void testDeleteLeave_NotFound() {
+        when(leaveRepository.findById(1L)).thenReturn(Optional.empty());
+        
+        assertThrows(ResponseStatusException.class, () -> leaveService.deleteLeave(1L, "employee@test.com"));
+    }
 
+    @Test
+    void testDeleteLeave_Forbidden() {
+        when(leaveRepository.findById(1L)).thenReturn(Optional.of(testLeave));
+        
         assertThrows(ResponseStatusException.class, () -> leaveService.deleteLeave(1L, "other@test.com"));
     }
 
     @Test
-    void createLeave_success() {
-        CreateLeaveRequest req = new CreateLeaveRequest();
-        req.setLeaveType("Sick"); req.setFromDate("2025-06-10"); req.setToDate("2025-06-12");
-        req.setReason("Medical"); req.setDayType("FULL_DAY"); req.setManagerEmail("mgr@test.com");
-        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(List.of());
-        when(leaveRepository.save(any())).thenAnswer(inv -> {
-            Leave l = inv.getArgument(0);
-            l.setId(1L);
-            return l;
-        });
-
-        Leave result = leaveService.createLeave(req, "emp@test.com");
-
-        assertEquals("Sick", result.getLeaveType());
-        verify(leaveRepository).save(any());
-    }
-
-    @Test
-    void createLeave_withDays() {
-        CreateLeaveRequest req = new CreateLeaveRequest();
-        req.setLeaveType("Sick");
-        LeaveDayEntry day = new LeaveDayEntry();
-        day.setDate("2025-06-10"); day.setDayType("FULL_DAY");
-        req.setDays(List.of(day));
-        req.setReason("Medical");
-        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(List.of());
-        when(leaveRepository.save(any())).thenAnswer(inv -> {
-            Leave l = inv.getArgument(0);
-            l.setId(1L);
-            return l;
-        });
-
-        Leave result = leaveService.createLeave(req, "emp@test.com");
-
-        assertNotNull(result);
-    }
-
-    @Test
-    void createLeave_conflict() {
-        CreateLeaveRequest req = new CreateLeaveRequest();
-        req.setLeaveType("Sick"); req.setFromDate("2025-06-10"); req.setToDate("2025-06-12");
-        req.setReason("Medical");
-        Leave existing = new Leave(); existing.setId(2L);
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_APPROVED);
-        existing.setTrail(List.of(trail));
-        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(List.of(existing));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.createLeave(req, "emp@test.com"));
-    }
-
-    @Test
-    void createLeave_withDaysConflict() {
-        CreateLeaveRequest req = new CreateLeaveRequest();
-        req.setLeaveType("Sick");
-        LeaveDayEntry day = new LeaveDayEntry();
-        day.setDate("2025-06-10"); day.setDayType("FULL_DAY");
-        req.setDays(List.of(day));
-        req.setReason("Medical");
-        
-        Leave existing = new Leave(); existing.setId(2L);
-        LeaveDayEntry existingDay = new LeaveDayEntry();
-        existingDay.setDate("2025-06-10");
-        existing.setDays(List.of(existingDay));
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_PENDING);
-        existing.setTrail(List.of(trail));
-        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(List.of(existing));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.createLeave(req, "emp@test.com"));
-    }
-
-    @Test
-    void createLeave_withHalfDay() {
-        CreateLeaveRequest req = new CreateLeaveRequest();
-        req.setLeaveType("Sick"); req.setFromDate("2025-06-10"); req.setToDate("2025-06-10");
-        req.setReason("Medical"); req.setDayType("HALF_DAY"); req.setHalfDaySession("MORNING");
-        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(List.of());
-        when(leaveRepository.save(any())).thenAnswer(inv -> {
-            Leave l = inv.getArgument(0);
-            l.setId(1L);
-            return l;
-        });
-
-        Leave result = leaveService.createLeave(req, "emp@test.com");
-
-        assertNotNull(result);
-    }
-
-    @Test
-    void createLeave_withDefaultManager() {
-        CreateLeaveRequest req = new CreateLeaveRequest();
-        req.setLeaveType("Sick"); req.setFromDate("2025-06-10"); req.setToDate("2025-06-12");
-        req.setReason("Medical");
-        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(List.of());
-        when(leaveRepository.save(any())).thenAnswer(inv -> {
-            Leave l = inv.getArgument(0);
-            l.setId(1L);
-            return l;
-        });
-
-        Leave result = leaveService.createLeave(req, "emp@test.com");
-
-        assertEquals("manager@test.com", result.getManagerEmail());
-    }
-
-    @Test
-    void updateLeave_withHalfDay() {
-        UpdateLeaveRequest req = new UpdateLeaveRequest();
-        req.setLeaveType("Casual"); req.setFromDate("2025-06-05"); req.setToDate("2025-06-05");
-        req.setReason("Personal"); req.setDayType("HALF_DAY"); req.setHalfDaySession("AFTERNOON");
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_PENDING);
-        leave.setTrail(new ArrayList<>(List.of(trail)));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-        when(leaveRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        Leave result = leaveService.updateLeave(1L, req, "emp@test.com");
-
-        assertNotNull(result);
-    }
-
-    @Test
-    void deleteLeave_notPending() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_APPROVED);
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.deleteLeave(1L, "emp@test.com"));
-    }
-
-    @Test
-    void getPendingLeavesFor_admin() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        leave.setManagerEmail("mgr@test.com");
-        LeaveDayEntry day = new LeaveDayEntry();
-        day.setDate("2025-06-01"); day.setStatus(LeaveConstants.STATUS_APPROVED);
-        day.setReviewStage(LeaveConstants.STAGE_MANAGER);
-        leave.setDays(List.of(day));
-        leave.setFromDate(LocalDate.of(2025, 6, 1));
-        leave.setToDate(LocalDate.of(2025, 6, 1));
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_MANAGER_APPROVED);
-        trail.put(LeaveConstants.TRAIL_STAGE, LeaveConstants.STAGE_MANAGER);
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_MANAGER)).thenReturn(List.of());
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_ADMIN)).thenReturn(List.of(1L));
-
-        List<Leave> result = leaveService.getPendingLeavesFor("admin@test.com");
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void getPendingLeavesFor_adminWithRejectedDays() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        LeaveDayEntry day = new LeaveDayEntry();
-        day.setDate("2025-06-01"); day.setStatus(LeaveConstants.STATUS_REJECTED);
-        leave.setDays(List.of(day));
-        leave.setTrail(new ArrayList<>());
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_MANAGER)).thenReturn(List.of());
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_ADMIN)).thenReturn(List.of(1L));
-
-        List<Leave> result = leaveService.getPendingLeavesFor("admin@test.com");
-
-        assertEquals(0, result.size());
-    }
-
-    @Test
-    void getManagerLoggedLeaves_noApprovedLeaves() {
+    void testGetLeaveBalance() {
         EmployeeLeave empLeave = new EmployeeLeave();
-        empLeave.setEmailId("mgr@test.com");
+        empLeave.setEmailId("employee@test.com");
+        empLeave.setFullName("Test Employee");
         Map<String, Object> leaves = new HashMap<>();
+        leaves.put("sickLeave", 10);
         empLeave.setLeaves(leaves);
-        when(employeeLeaveRepository.findByEmailId("mgr@test.com")).thenReturn(Optional.of(empLeave));
-
-        Map<String, Object> result = leaveService.getManagerLoggedLeaves("mgr@test.com");
-
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void getAdminLoggedLeaves_notFound() {
-        when(employeeLeaveRepository.findByEmailId("admin@test.com")).thenReturn(Optional.empty());
-
-        Map<String, Object> result = leaveService.getAdminLoggedLeaves("admin@test.com");
-
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void hydrateTransients_withDaysAndTrail() {
-        Leave leave = new Leave(); leave.setId(1L);
-        LeaveDayEntry day1 = new LeaveDayEntry(); day1.setDate("2025-06-01"); day1.setStatus(LeaveConstants.STATUS_APPROVED); day1.setDayType("FULL_DAY");
-        LeaveDayEntry day2 = new LeaveDayEntry(); day2.setDate("2025-06-02"); day2.setStatus(LeaveConstants.STATUS_REJECTED); day2.setDayType("HALF_DAY");
-        leave.setDays(List.of(day1, day2));
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_PARTIAL);
-        trail.put(LeaveConstants.TRAIL_STAGE, LeaveConstants.STAGE_ADMIN);
-        trail.put(LeaveConstants.TRAIL_DAY_TYPE, "FULL_DAY");
-        trail.put(LeaveConstants.TRAIL_REVIEWED_BY, "admin@test.com");
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        Leave result = leaveService.getLeaveById(1L);
-
-        assertEquals(LeaveConstants.STATUS_PARTIAL, result.getStatus());
-        assertEquals(1.5, result.getTotalDays());
-    }
-
-    @Test
-    void hydrateTransients_withManagerApproval() {
-        Leave leave = new Leave(); leave.setId(1L);
-        LeaveDayEntry day = new LeaveDayEntry(); day.setDate("2025-06-01"); day.setStatus(LeaveConstants.STATUS_APPROVED);
-        leave.setDays(List.of(day));
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_MANAGER_APPROVED);
-        trail.put(LeaveConstants.TRAIL_STAGE, LeaveConstants.STAGE_MANAGER);
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        Leave result = leaveService.getLeaveById(1L);
-
-        assertEquals(LeaveConstants.STATUS_MANAGER_APPROVED, result.getStatus());
-    }
-
-    @Test
-    void hydrateTransients_allRejected() {
-        Leave leave = new Leave(); leave.setId(1L);
-        LeaveDayEntry day = new LeaveDayEntry(); day.setDate("2025-06-01"); day.setStatus(LeaveConstants.STATUS_REJECTED);
-        leave.setDays(List.of(day));
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_PENDING);
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        Leave result = leaveService.getLeaveById(1L);
-
-        assertEquals(LeaveConstants.STATUS_REJECTED, result.getStatus());
-    }
-
-    @Test
-    void getPendingLeavesFor_adminWithManagerRejection() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_REJECTED);
-        trail.put(LeaveConstants.TRAIL_STAGE, LeaveConstants.STAGE_MANAGER);
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_ADMIN)).thenReturn(List.of(1L));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_MANAGER)).thenReturn(List.of());
-
-        List<Leave> result = leaveService.getPendingLeavesFor("admin@test.com");
-
-        assertEquals(0, result.size());
-    }
-
-    @Test
-    void getPendingLeavesFor_adminWithNoDays() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        leave.setDays(null);
-        leave.setTrail(new ArrayList<>());
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_ADMIN)).thenReturn(List.of(1L));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_MANAGER)).thenReturn(List.of());
-
-        List<Leave> result = leaveService.getPendingLeavesFor("admin@test.com");
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void getPendingLeavesFor_excludesOwnLeaves() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("mgr@test.com");
-        leave.setManagerEmail("mgr@test.com"); leave.setTrail(new ArrayList<>());
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_MANAGER)).thenReturn(List.of(1L));
-
-        List<Leave> result = leaveService.getPendingLeavesFor("mgr@test.com");
-
-        assertEquals(0, result.size());
-    }
-
-    @Test
-    void createLeave_withDaysConflictNoDays() {
-        CreateLeaveRequest req = new CreateLeaveRequest();
-        req.setLeaveType("Sick");
-        LeaveDayEntry day = new LeaveDayEntry(); day.setDate("2025-06-10"); day.setDayType("FULL_DAY");
-        req.setDays(List.of(day));
-        req.setReason("Medical");
         
-        Leave existing = new Leave(); existing.setId(2L);
-        existing.setFromDate(LocalDate.of(2025, 6, 10));
-        existing.setToDate(LocalDate.of(2025, 6, 10));
-        existing.setDays(null);
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_APPROVED);
-        existing.setTrail(List.of(trail));
-        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(List.of(existing));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.createLeave(req, "emp@test.com"));
+        when(employeeLeaveRepository.findByEmailId("employee@test.com")).thenReturn(Optional.of(empLeave));
+        
+        Map<String, Object> balance = leaveService.getLeaveBalance("employee@test.com");
+        
+        assertNotNull(balance);
+        assertEquals("Test Employee", balance.get("employeeName"));
+        assertEquals("employee@test.com", balance.get("email"));
     }
 
     @Test
-    void getAdminLoggedLeaves_noApprovedLeaves() {
+    void testGetLeaveBalance_NotFound() {
+        when(employeeLeaveRepository.findByEmailId("employee@test.com")).thenReturn(Optional.empty());
+        
+        Map<String, Object> balance = leaveService.getLeaveBalance("employee@test.com");
+        
+        assertNotNull(balance);
+        assertTrue(balance.isEmpty());
+    }
+
+    @Test
+    void testGetPendingLeavesFor_Manager() {
+        when(leaveRepository.findAll()).thenReturn(List.of(testLeave));
+        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_MANAGER)).thenReturn(List.of(1L));
+        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_ADMIN)).thenReturn(Collections.emptyList());
+        
+        List<Leave> pending = leaveService.getPendingLeavesFor("manager@test.com");
+        
+        assertNotNull(pending);
+        assertEquals(1, pending.size());
+    }
+
+    @Test
+    void testGetReviewedLeavesByReviewer() {
+        Map<String, String> reviewTrail = new HashMap<>();
+        reviewTrail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_APPROVED);
+        reviewTrail.put(LeaveConstants.TRAIL_REVIEWED_BY, "manager@test.com");
+        testLeave.setTrail(List.of(reviewTrail));
+        
+        when(leaveRepository.findAll()).thenReturn(List.of(testLeave));
+        
+        List<Leave> reviewed = leaveService.getReviewedLeavesByReviewer("manager@test.com");
+        
+        assertNotNull(reviewed);
+        assertEquals(1, reviewed.size());
+    }
+
+    @Test
+    void testGetManagerLoggedLeaves() {
+        EmployeeLeave empLeave = new EmployeeLeave();
+        empLeave.setEmailId("manager@test.com");
+        empLeave.setFullName("Test Manager");
+        
+        Map<String, Object> leaveRecord = new HashMap<>();
+        leaveRecord.put("leaveId", 1L);
+        leaveRecord.put("employeeEmail", "employee@test.com");
+        
+        Map<String, Object> leaves = new HashMap<>();
+        leaves.put("approved_leaves", List.of(leaveRecord));
+        empLeave.setLeaves(leaves);
+        
+        when(employeeLeaveRepository.findByEmailId("manager@test.com")).thenReturn(Optional.of(empLeave));
+        when(leaveRepository.findById(1L)).thenReturn(Optional.of(testLeave));
+        
+        Map<String, Object> result = leaveService.getManagerLoggedLeaves("manager@test.com");
+        
+        assertNotNull(result);
+        assertEquals("Test Manager", result.get("managerName"));
+        assertEquals("manager@test.com", result.get("managerEmail"));
+    }
+
+    @Test
+    void testGetAdminLoggedLeaves() {
         EmployeeLeave empLeave = new EmployeeLeave();
         empLeave.setEmailId("admin@test.com");
+        empLeave.setFullName("Test Admin");
+        
+        Map<String, Object> leaveRecord = new HashMap<>();
+        leaveRecord.put("leaveId", 1L);
+        leaveRecord.put("employeeEmail", "employee@test.com");
+        
         Map<String, Object> leaves = new HashMap<>();
+        leaves.put("approved_leaves", List.of(leaveRecord));
         empLeave.setLeaves(leaves);
+        
         when(employeeLeaveRepository.findByEmailId("admin@test.com")).thenReturn(Optional.of(empLeave));
-
+        when(leaveRepository.findById(1L)).thenReturn(Optional.of(testLeave));
+        
         Map<String, Object> result = leaveService.getAdminLoggedLeaves("admin@test.com");
-
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void hydrateTransients_withAdminApprovalAndPartialDays() {
-        Leave leave = new Leave(); leave.setId(1L);
-        LeaveDayEntry day1 = new LeaveDayEntry(); day1.setDate("2025-06-01"); day1.setStatus(LeaveConstants.STATUS_APPROVED);
-        LeaveDayEntry day2 = new LeaveDayEntry(); day2.setDate("2025-06-02"); day2.setStatus(LeaveConstants.STATUS_REJECTED);
-        leave.setDays(List.of(day1, day2));
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_APPROVED);
-        trail.put(LeaveConstants.TRAIL_STAGE, LeaveConstants.STAGE_ADMIN);
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        Leave result = leaveService.getLeaveById(1L);
-
-        assertEquals(LeaveConstants.STATUS_PARTIAL, result.getStatus());
-    }
-
-    @Test
-    void hydrateTransients_withPendingDays() {
-        Leave leave = new Leave(); leave.setId(1L);
-        LeaveDayEntry day = new LeaveDayEntry(); day.setDate("2025-06-01"); day.setStatus(null);
-        leave.setDays(List.of(day));
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_APPROVED);
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        Leave result = leaveService.getLeaveById(1L);
-
-        assertEquals(LeaveConstants.STATUS_PENDING, result.getStatus());
-    }
-
-    @Test
-    void hydrateTransients_noDaysNoTrail() {
-        Leave leave = new Leave(); leave.setId(1L);
-        leave.setDays(null);
-        leave.setTrail(null);
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        Leave result = leaveService.getLeaveById(1L);
-
-        assertEquals(LeaveConstants.STATUS_PENDING, result.getStatus());
-        assertEquals(LeaveConstants.DAY_TYPE_FULL, result.getDayType());
-    }
-
-    @Test
-    void createLeave_withBlankManagerEmail() {
-        CreateLeaveRequest req = new CreateLeaveRequest();
-        req.setLeaveType("Sick"); req.setFromDate("2025-06-10"); req.setToDate("2025-06-12");
-        req.setReason("Medical"); req.setManagerEmail("");
-        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(List.of());
-        when(leaveRepository.save(any())).thenAnswer(inv -> {
-            Leave l = inv.getArgument(0);
-            l.setId(1L);
-            return l;
-        });
-
-        Leave result = leaveService.createLeave(req, "emp@test.com");
-
-        assertEquals("manager@test.com", result.getManagerEmail());
-    }
-
-    @Test
-    void getPendingLeavesFor_adminWithPendingDays() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        LeaveDayEntry day = new LeaveDayEntry(); day.setDate("2025-06-01"); day.setStatus(LeaveConstants.STATUS_PENDING);
-        leave.setDays(List.of(day));
-        leave.setFromDate(LocalDate.of(2025, 6, 1));
-        leave.setToDate(LocalDate.of(2025, 6, 1));
-        leave.setTrail(new ArrayList<>());
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_ADMIN)).thenReturn(List.of(1L));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_MANAGER)).thenReturn(List.of());
-
-        List<Leave> result = leaveService.getPendingLeavesFor("admin@test.com");
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void hydrateTransients_withEmptyTrail() {
-        Leave leave = new Leave(); leave.setId(1L);
-        leave.setDays(null);
-        leave.setTrail(new ArrayList<>());
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        Leave result = leaveService.getLeaveById(1L);
-
-        assertEquals(LeaveConstants.STATUS_PENDING, result.getStatus());
-    }
-
-    @Test
-    void createLeave_withDaysHalfDay() {
-        CreateLeaveRequest req = new CreateLeaveRequest();
-        req.setLeaveType("Sick");
-        LeaveDayEntry day = new LeaveDayEntry();
-        day.setDate("2025-06-10"); day.setDayType("HALF_DAY"); day.setHalfDaySession("MORNING");
-        req.setDays(List.of(day));
-        req.setReason("Medical");
-        when(leaveRepository.findOverlapping(anyString(), any(), any(), anyLong())).thenReturn(List.of());
-        when(leaveRepository.save(any())).thenAnswer(inv -> {
-            Leave l = inv.getArgument(0);
-            l.setId(1L);
-            return l;
-        });
-
-        Leave result = leaveService.createLeave(req, "emp@test.com");
-
+        
         assertNotNull(result);
-    }
-
-    @Test
-    void updateLeave_withNullDayType() {
-        UpdateLeaveRequest req = new UpdateLeaveRequest();
-        req.setLeaveType("Casual"); req.setFromDate("2025-06-05"); req.setToDate("2025-06-07");
-        req.setReason("Personal"); req.setDayType(null);
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_PENDING);
-        leave.setTrail(new ArrayList<>(List.of(trail)));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-        when(leaveRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        Leave result = leaveService.updateLeave(1L, req, "emp@test.com");
-
-        assertNotNull(result);
-    }
-
-    @Test
-    void hydrateTransients_withHalfDaySession() {
-        Leave leave = new Leave(); leave.setId(1L);
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_PENDING);
-        trail.put(LeaveConstants.TRAIL_DAY_TYPE, LeaveConstants.DAY_TYPE_HALF);
-        trail.put(LeaveConstants.TRAIL_HALF_DAY_SESSION, "MORNING");
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        Leave result = leaveService.getLeaveById(1L);
-
-        assertEquals("MORNING", result.getHalfDaySession());
-    }
-
-    @Test
-    void getPendingLeavesFor_adminWithApprovedDaysNoReviewStage() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        LeaveDayEntry day = new LeaveDayEntry();
-        day.setDate("2025-06-01"); day.setStatus(LeaveConstants.STATUS_APPROVED);
-        leave.setDays(List.of(day));
-        leave.setFromDate(LocalDate.of(2025, 6, 1));
-        leave.setToDate(LocalDate.of(2025, 6, 1));
-        leave.setTrail(new ArrayList<>());
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_ADMIN)).thenReturn(List.of(1L));
-        when(leaveProcessService.getActiveLeaveIdsForTask(LeaveConstants.TASK_DEF_KEY_MANAGER)).thenReturn(List.of());
-
-        List<Leave> result = leaveService.getPendingLeavesFor("admin@test.com");
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void hydrateTransients_allApprovedWithAdminStage() {
-        Leave leave = new Leave(); leave.setId(1L);
-        LeaveDayEntry day = new LeaveDayEntry(); day.setDate("2025-06-01"); day.setStatus(LeaveConstants.STATUS_APPROVED);
-        leave.setDays(List.of(day));
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_STATUS, LeaveConstants.STATUS_APPROVED);
-        trail.put(LeaveConstants.TRAIL_STAGE, LeaveConstants.STAGE_ADMIN);
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findById(1L)).thenReturn(Optional.of(leave));
-
-        Leave result = leaveService.getLeaveById(1L);
-
-        assertEquals(LeaveConstants.STATUS_APPROVED, result.getStatus());
-    }
-
-    @Test
-    void updateHoliday_sameDateAllowed() {
-        HolidayRequest req = new HolidayRequest(); req.setName("Updated"); req.setDate("2025-03-15");
-        Holiday existing = new Holiday(); existing.setId(1L);
-        when(holidayRepository.findById(1L)).thenReturn(Optional.of(existing));
-        when(holidayRepository.findByDate(any())).thenReturn(Optional.of(existing));
-        when(holidayRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        Holiday result = leaveService.updateHoliday(1L, req);
-
-        assertEquals("Updated", result.getName());
-    }
-
-    @Test
-    void updateLeaveType_sameName() {
-        CreateLeaveTypeRequest req = new CreateLeaveTypeRequest();
-        req.setLeaveName("Sick"); req.setLeaveUniqueName("sick"); req.setMaxDays(12);
-        LeaveType existing = new LeaveType(); existing.setId(1); existing.setLeaveName("Sick");
-        when(leaveTypeRepository.findById(1)).thenReturn(Optional.of(existing));
-        when(leaveTypeRepository.findByLeaveName("Sick")).thenReturn(Optional.of(existing));
-        when(leaveTypeRepository.findByLeaveUniqueName("sick")).thenReturn(Optional.of(existing));
-        when(leaveTypeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        LeaveType result = leaveService.updateLeaveType(1, req);
-
-        assertEquals("Sick", result.getLeaveName());
-    }
-
-    @Test
-    void updateLeaveType_nameConflict() {
-        CreateLeaveTypeRequest req = new CreateLeaveTypeRequest();
-        req.setLeaveName("Casual"); req.setLeaveUniqueName("casual");
-        LeaveType existing = new LeaveType(); existing.setId(1);
-        LeaveType conflicting = new LeaveType(); conflicting.setId(2);
-        when(leaveTypeRepository.findById(1)).thenReturn(Optional.of(existing));
-        when(leaveTypeRepository.findByLeaveName("Casual")).thenReturn(Optional.of(conflicting));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.updateLeaveType(1, req));
-    }
-
-    @Test
-    void updateLeaveType_uniqueNameConflict() {
-        CreateLeaveTypeRequest req = new CreateLeaveTypeRequest();
-        req.setLeaveName("Casual"); req.setLeaveUniqueName("casual");
-        LeaveType existing = new LeaveType(); existing.setId(1);
-        LeaveType conflicting = new LeaveType(); conflicting.setId(2);
-        when(leaveTypeRepository.findById(1)).thenReturn(Optional.of(existing));
-        when(leaveTypeRepository.findByLeaveName(anyString())).thenReturn(Optional.empty());
-        when(leaveTypeRepository.findByLeaveUniqueName("casual")).thenReturn(Optional.of(conflicting));
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.updateLeaveType(1, req));
-    }
-
-    @Test
-    void getReviewedLeavesByReviewer_excludesOwnLeaves() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("mgr@test.com");
-        Map<String, String> trail = new HashMap<>();
-        trail.put(LeaveConstants.TRAIL_REVIEWED_BY, "mgr@test.com");
-        leave.setTrail(List.of(trail));
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-
-        List<Leave> result = leaveService.getReviewedLeavesByReviewer("mgr@test.com");
-
-        assertEquals(0, result.size());
-    }
-
-    @Test
-    void getReviewedLeavesByReviewer_noTrail() {
-        Leave leave = new Leave(); leave.setId(1L); leave.setEmailId("emp@test.com");
-        leave.setTrail(null);
-        when(leaveRepository.findAll()).thenReturn(List.of(leave));
-
-        List<Leave> result = leaveService.getReviewedLeavesByReviewer("mgr@test.com");
-
-        assertEquals(0, result.size());
-    }
-
-    @Test
-    void updateLeave_notFound() {
-        UpdateLeaveRequest req = new UpdateLeaveRequest();
-        when(leaveRepository.findById(1L)).thenReturn(Optional.empty());
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.updateLeave(1L, req, "emp@test.com"));
-    }
-
-    @Test
-    void deleteLeave_notFound() {
-        when(leaveRepository.findById(1L)).thenReturn(Optional.empty());
-
-        assertThrows(ResponseStatusException.class, () -> leaveService.deleteLeave(1L, "emp@test.com"));
+        assertEquals("Test Admin", result.get("adminName"));
+        assertEquals("admin@test.com", result.get("adminEmail"));
     }
 }

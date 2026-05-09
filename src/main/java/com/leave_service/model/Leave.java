@@ -36,6 +36,8 @@ public class Leave {
     private LocalDate createdAt;
     @Column(name = "updated_at")
     private LocalDate updatedAt;
+    @Column(name = "document_path")
+    private String documentPath;
     @Column(name = "editable")
     private Boolean editable = true;
     @JdbcTypeCode(SqlTypes.JSON)
@@ -54,4 +56,4 @@ public class Leave {
     private Double totalDays;
     @Transient
     private String reviewedBy;
-}
+}

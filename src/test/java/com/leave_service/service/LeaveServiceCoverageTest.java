@@ -596,7 +596,7 @@ class LeaveServiceCoverageTest {
         empLeave.setEmailId("admin@test.com");
         empLeave.setFullName("Admin User");
         Map<String, Object> leaves = new HashMap<>();
-        leaves.put("approved_leaves", List.of(Map.of("leaveId", "1")));
+        leaves.put("approved_leaves", List.of(Map.of("leaveId", 1L)));
         empLeave.setLeaves(leaves);
 
         when(employeeLeaveRepository.findByEmailId("admin@test.com")).thenReturn(Optional.of(empLeave));

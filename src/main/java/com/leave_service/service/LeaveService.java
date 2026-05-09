@@ -209,6 +209,15 @@ public class LeaveService {
         hydrateTransients(leave);
         return leave;
     }
+
+    @Transactional
+    public void setDocumentPath(Long leaveId, String documentPath) {
+        Leave leave = leaveRepository.findById(leaveId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Leave not found"));
+        leave.setDocumentPath(documentPath);
+        leaveRepository.save(leave);
+    }
+
     public List<Leave> getAllLeaves() {
         return hydrateAll(leaveRepository.findAll());
     }
