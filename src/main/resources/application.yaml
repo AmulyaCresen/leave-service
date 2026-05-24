@@ -1,3 +1,117 @@
+server:
+  port: 8083
+  error:
+    include-message: always
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/plain,text/html
+    min-response-size: 1024
+
 spring:
   application:
     name: leave-service
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/leavemanagement
+    username: postgres
+    password: Amulya1234
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 10
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        globally_quoted_identifiers: true
+        default_schema: leave
+        jdbc:
+          batch_size: 50
+          fetch_size: 100
+        order_inserts: true
+        order_updates: true
+        query:
+          in_clause_parameter_padding: true
+        generate_statistics: false
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: amulyachodisetty2004@gmail.com
+    password: fekg njti gujr btuk
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+  # Spring AI - Ollama (llama3.2 for function calling)
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: llama3.2
+        options:
+          temperature: 0.0
+          num-ctx: 8192
+          num-predict: 512
+
+app:
+  mail:
+    sender: amulyachodisetty2004@gmail.com
+    manager: amulyachodisetty0@gmail.com
+    admin: amulyachodisetty2004@gmail.com
+  reminder-duration-fallback: PT1M
+  user-service:
+    url: http://localhost:8082
+
+flowable:
+  database-schema-update: true
+  async-executor-activate: true
+  idm:
+    enabled: false
+  process-definition-location-prefix: classpath*:/processes/
+  process-definition-location-suffixes:
+    - '**.bpmn'
+    - '**.bpmn20.xml'
+  admin:
+    app:
+      server-config:
+        name: leave-service
+        description: Leave Management Service
+        server-address: http://localhost
+        port: 8083
+        context-root: /
+        rest-root: api
+  task:
+    app:
+      server-config:
+        name: leave-service
+        description: Leave Management Service
+        server-address: http://localhost
+        port: 8083
+        context-root: /
+        rest-root: api
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true

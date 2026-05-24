@@ -1,0 +1,46 @@
+package com.leave_service.commons;
+public final class LeaveConstants {
+    private LeaveConstants() {}
+    public static final String VAR_LEAVE_ID              = "leaveId";
+    public static final String VAR_EMPLOYEE_EMAIL        = "employeeEmail";
+    public static final String VAR_LEAVE_TYPE            = "leaveType";
+    public static final String VAR_FROM_DATE_RAW         = "fromDateRaw";
+    public static final String VAR_TO_DATE_RAW           = "toDateRaw";
+    public static final String VAR_REASON                = "reason";
+    public static final String VAR_TOTAL_DAYS            = "totalDays";
+    public static final String VAR_MANAGER_EMAIL         = "managerEmail";
+    public static final String VAR_ADMIN_EMAIL           = "adminEmail";
+    public static final String VAR_REJECTION_REASON      = "rejectionReason";
+    public static final String VAR_REVIEWED_BY           = "reviewedBy";
+    public static final String VAR_MANAGER_REVIEWED_BY   = "managerReviewedBy";
+    public static final String VAR_DAY_DECISIONS         = "dayDecisions";
+    public static final String VAR_MANAGER_DAY_DECISIONS = "managerDayDecisions";
+    public static final String TRAIL_STATUS              = "status";
+    public static final String TRAIL_DAY_TYPE            = "dayType";
+    public static final String TRAIL_DATE                = "date";
+    public static final String TRAIL_REVIEWED_BY         = "reviewedBy";
+    public static final String TRAIL_REJECTION_REASON    = "rejectionReason";
+    public static final String TRAIL_HALF_DAY_SESSION    = "halfDaySession";
+    public static final String TRAIL_STAGE               = "stage";
+    public static final String STAGE_MANAGER             = "MANAGER";
+    public static final String STAGE_ADMIN               = "ADMIN";
+    public static final String STATUS_PENDING            = "PENDING";
+    public static final String STATUS_MANAGER_APPROVED   = "MANAGER_APPROVED";
+    public static final String STATUS_APPROVED           = "APPROVED";
+    public static final String STATUS_REJECTED           = "REJECTED";
+    public static final String STATUS_PARTIAL            = "PARTIAL";
+    public static final String DAY_TYPE_FULL             = "FULL_DAY";
+    public static final String DAY_TYPE_HALF             = "HALF_DAY";
+    public static final String PROCESS_KEY               = "leaveApprovalProcess";
+    public static final String PROCESS_BUSINESS_KEY      = "leave-";
+    public static final String TASK_DEF_KEY_MANAGER      = "usertask_manager";
+    public static final String TASK_DEF_KEY_ADMIN        = "usertask_admin";
+    public static final String SYSTEM_USER               = "system";
+    public static final String NO_REASON_PROVIDED        = "No reason provided";
+    public static final String APPROVED_LEAVES_KEY       = "approved_leaves";
+    public static final String TRAIL_DT_PATTERN          = "yyyy-MM-dd HH:mm:ss";
+    public static final String TYPE_LEAVE_APPLIED        = "LEAVE_APPLIED";
+    public static final String TYPE_DAY_DECISION         = "DAY_DECISION";
+    public static final String TYPE_MANAGER_REVIEW       = "MANAGER_REVIEW_EVENT";
+    public static final String TYPE_ADMIN_REVIEW         = "ADMIN_REVIEW_EVENT";
+}
