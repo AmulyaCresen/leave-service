@@ -14,4 +14,6 @@ public class TaskRequest {
     private String priority;
     private String dueDate;
     private String managerEmail;
+    private String completedAt;
+    private String completionRemarks;
 }

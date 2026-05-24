@@ -17,4 +17,4 @@ public class Holiday {
     private String name;
     @Column(name = "date")
     private LocalDate date;
-}
+}

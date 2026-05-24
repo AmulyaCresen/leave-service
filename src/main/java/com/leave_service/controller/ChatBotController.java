@@ -9,6 +9,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 @RestController
 @RequestMapping("/api/chatbot")
@@ -16,6 +18,8 @@ public class ChatBotController {
 
     @Autowired
     private ChatBotService chatBotService;
+    
+    private final Executor chatExecutor = Executors.newFixedThreadPool(10);
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamChat(@RequestBody Map<String, String> request) {
@@ -42,11 +46,9 @@ public class ChatBotController {
                 if (response == null || response.isBlank()) {
                     emitter.send(SseEmitter.event().data("No response generated"));
                 } else {
-                    // Check if response contains table (has pipe characters and multiple lines)
                     boolean hasTable = response.contains("|") && response.contains("\n");
                     
                     if (hasTable) {
-                        // For tables, send line by line but mark newlines with special token
                         String[] lines = response.split("\n");
                         for (int i = 0; i < lines.length; i++) {
                             emitter.send(SseEmitter.event().data(lines[i]));
@@ -55,7 +57,6 @@ public class ChatBotController {
                             }
                         }
                     } else {
-                        // For regular text, stream word by word
                         String[] words = response.split("\\s+");
                         for (String word : words) {
                             if (!word.isEmpty()) {
@@ -81,7 +82,7 @@ public class ChatBotController {
                     emitter.completeWithError(e);
                 }
             }
-        });
+        }, chatExecutor);
 
         return emitter;
     }
@@ -126,5 +127,63 @@ public class ChatBotController {
     @GetMapping("/health")
     public ResponseEntity<Map<String, String>> health() {
         return ResponseEntity.ok(Map.of("status", "healthy", "service", "CresenGPT"));
+    }
+    
+    @PostMapping("/quick-response")
+    public ResponseEntity<?> getQuickResponse(@RequestBody Map<String, String> request) {
+        String action = request.get("action");
+        String email = request.get("userEmail");
+        String name = request.get("userName");
+        String role = request.get("userRole");
+        
+        String response = chatBotService.getQuickResponseDirect(action, email, name, role);
+        return ResponseEntity.ok(Map.of("response", response, "status", "success"));
+    }
+    
+    @PostMapping("/save-quick-history")
+    public ResponseEntity<?> saveQuickHistory(@RequestBody Map<String, Object> request) {
+        String userMessage = (String) request.get("userMessage");
+        String botResponse = (String) request.get("botResponse");
+        String email = (String) request.get("email");
+        Long sessionId = request.get("sessionId") != null ? 
+            Long.parseLong(request.get("sessionId").toString()) : null;
+        Long latency = request.get("latency") != null ? 
+            Long.parseLong(request.get("latency").toString()) : 0L;
+        
+        Long newSessionId = chatBotService.saveQuickChatHistory(userMessage, botResponse, email, sessionId, latency);
+        return ResponseEntity.ok(Map.of("status", "success", "sessionId", newSessionId));
+    }
+    
+    @DeleteMapping("/sessions/all")
+    public ResponseEntity<?> deleteAllSessions(@RequestHeader("X-User-Email") String email) {
+        try {
+            chatBotService.deleteAllSessions(email);
+            return ResponseEntity.ok(Map.of("status", "success", "message", "All chat sessions deleted"));
+        } catch (Exception e) {
+            System.err.println("[ChatBotController] Delete all sessions error: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of(
+                "error", "Failed to delete all sessions",
+                "message", e.getMessage()
+            ));
+        }
+    }
+    
+    @DeleteMapping("/admin/clear-all-history")
+    public ResponseEntity<?> clearAllChatHistory() {
+        try {
+            chatBotService.clearAllChatHistory();
+            return ResponseEntity.ok(Map.of(
+                "status", "success", 
+                "message", "All chat history cleared for all employees"
+            ));
+        } catch (Exception e) {
+            System.err.println("[ChatBotController] Clear all history error: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of(
+                "error", "Failed to clear all chat history",
+                "message", e.getMessage()
+            ));
+        }
     }
 }

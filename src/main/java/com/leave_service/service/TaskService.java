@@ -20,9 +20,6 @@ public class TaskService {
         if (request.getTitle() == null || request.getTitle().trim().isEmpty()) {
             throw new RuntimeException("Title is required");
         }
-        if (request.getManagerEmail() == null || request.getManagerEmail().trim().isEmpty()) {
-            throw new RuntimeException("Manager email is required");
-        }
         
         Task task = new Task();
         task.setEmailId(emailId);
@@ -30,7 +27,7 @@ public class TaskService {
         task.setDescription(request.getDescription() != null ? request.getDescription().trim() : "");
         task.setStatus(request.getStatus() != null && !request.getStatus().isEmpty() ? request.getStatus() : "PENDING");
         task.setPriority(request.getPriority() != null && !request.getPriority().isEmpty() ? request.getPriority() : "MEDIUM");
-        task.setManagerEmail(request.getManagerEmail().trim());
+        task.setManagerEmail(request.getManagerEmail() != null && !request.getManagerEmail().trim().isEmpty() ? request.getManagerEmail().trim() : null);
         
         if (request.getDueDate() != null && !request.getDueDate().trim().isEmpty()) {
             try {
@@ -90,7 +87,24 @@ public class TaskService {
                 task.setDueDate(java.time.LocalDateTime.parse(raw + "T00:00:00"));
             }
         }
-        
+
+        if ("COMPLETED".equals(request.getStatus())) {
+            if (request.getCompletedAt() != null && !request.getCompletedAt().isEmpty()) {
+                String raw = request.getCompletedAt();
+                task.setCompletedAt(raw.contains("T") ?
+                    java.time.LocalDateTime.parse(raw) :
+                    java.time.LocalDateTime.parse(raw + "T00:00:00"));
+            } else if (task.getCompletedAt() == null) {
+                task.setCompletedAt(java.time.LocalDateTime.now());
+            }
+            if (request.getCompletionRemarks() != null) {
+                task.setCompletionRemarks(request.getCompletionRemarks());
+            }
+        } else {
+            task.setCompletedAt(null);
+            task.setCompletionRemarks(null);
+        }
+
         return taskRepository.save(task);
     }
     

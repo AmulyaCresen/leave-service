@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import javax.sql.DataSource;
 @Configuration
@@ -39,7 +40,10 @@ public class FlowableConfig {
     }
     @Bean
     public RestTemplate restTemplate() {
-        return new RestTemplate();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(10000);
+        return new RestTemplate(factory);
     }
     @Bean
     public RuntimeService runtimeService(ProcessEngine processEngine) {
@@ -57,4 +61,4 @@ public class FlowableConfig {
     public HistoryService historyService(ProcessEngine processEngine) {
         return processEngine.getHistoryService();
     }
-}
+}

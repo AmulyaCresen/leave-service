@@ -15,13 +15,19 @@ public class CacheConfig {
 
     @Bean
     public CacheManager cacheManager() {
-        CaffeineCacheManager cacheManager = new CaffeineCacheManager("chatbotResponses");
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager(
+            "chatbotResponses", 
+            "leaveTypes", 
+            "holidays", 
+            "users",
+            "managers"
+        );
         cacheManager.setCaffeine(Caffeine.newBuilder()
-            .maximumSize(500)
-            .expireAfterWrite(30, TimeUnit.MINUTES)
+            .maximumSize(1000)
+            .expireAfterWrite(15, TimeUnit.MINUTES)
             .recordStats());
         
-        System.out.println("[Cache] Caffeine cache initialized - 500 entries, 30min TTL");
+        System.out.println("[Cache] Caffeine cache initialized - 1000 entries, 15min TTL");
         return cacheManager;
     }
 }

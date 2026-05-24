@@ -8,7 +8,10 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "tasks", schema = "leave")
+@Table(name = "tasks", schema = "leave", indexes = {
+    @Index(name = "idx_task_email_id", columnList = "email_id"),
+    @Index(name = "idx_task_manager_email", columnList = "manager_email")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -44,6 +47,12 @@ public class Task {
     
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
+
+    @Column(name = "completion_remarks", length = 2000)
+    private String completionRemarks;
     
     @PrePersist
     protected void onCreate() {

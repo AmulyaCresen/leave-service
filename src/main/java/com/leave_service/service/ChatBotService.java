@@ -261,6 +261,108 @@ public class ChatBotService {
     
 
     
+    private String getQuickResponse(String message, String email, String name, String role) {
+        String lowerMsg = message.toLowerCase().trim();
+        
+        if (lowerMsg.equals("my details") || lowerMsg.equals("my info") || lowerMsg.equals("who am i")) {
+            return String.format("Your details:\nName: %s\nEmail: %s\nRole: %s", name, email, role);
+        }
+        
+        if (lowerMsg.equals("leaves left") || lowerMsg.equals("leave balance") || lowerMsg.equals("my leaves")) {
+            LeaveBalanceResponse result = calculateLeaveBalance(email);
+            return formatLeaveBalance(result);
+        }
+        
+        if (lowerMsg.equals("pending leaves") || lowerMsg.equals("my pending leaves")) {
+            PendingLeavesResponse result = calculatePendingLeaves(email);
+            return formatPendingLeaves(result);
+        }
+        
+        if (lowerMsg.equals("leave types") || lowerMsg.equals("available leaves")) {
+            LeaveTypesResponse result = getAllLeaveTypesInfo();
+            return formatLeaveTypes(result);
+        }
+        
+        return null;
+    }
+    
+    public String getQuickResponseDirect(String action, String email, String name, String role) {
+        switch (action.toLowerCase()) {
+            case "my details":
+                return String.format("Your details:\nName: %s\nEmail: %s\nRole: %s", name, email, role);
+            case "leaves left":
+                LeaveBalanceResponse balance = calculateLeaveBalance(email);
+                return formatLeaveBalance(balance);
+            case "pending leaves":
+                PendingLeavesResponse pending = calculatePendingLeaves(email);
+                return formatPendingLeaves(pending);
+            case "leave types":
+                LeaveTypesResponse types = getAllLeaveTypesInfo();
+                return formatLeaveTypes(types);
+            default:
+                return "I can help with: My Details, Leaves Left, Pending Leaves, Leave Types";
+        }
+    }
+    
+    public Long saveQuickChatHistory(String userMessage, String botResponse, String email, Long sessionId, long latency) {
+        try {
+            ChatSession userRecord = chatSessionRepository.findByEmailId(email)
+                .orElseGet(() -> createNewUserRecord(email));
+            
+            Map<String, Object> session = null;
+            
+            if (sessionId != null) {
+                for (Map<String, Object> s : userRecord.getSessions()) {
+                    if (sessionId.equals(((Number) s.get("sessionId")).longValue())) {
+                        session = s;
+                        break;
+                    }
+                }
+            }
+            
+            if (session == null) {
+                session = createNewSession(userMessage);
+                userRecord.getSessions().add(session);
+            }
+            
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> messages = (List<Map<String, Object>>) session.get("messages");
+            
+            Map<String, Object> userMsg = new HashMap<>();
+            userMsg.put("sender", "user");
+            userMsg.put("content", userMessage);
+            userMsg.put("createdAt", OffsetDateTime.now().toString());
+            messages.add(userMsg);
+            
+            Map<String, Object> botMsg = new HashMap<>();
+            botMsg.put("sender", "bot");
+            botMsg.put("latency", latency);
+            botMsg.put("createdAt", OffsetDateTime.now().toString());
+            
+            if (botResponse.contains("|") && botResponse.contains("\n")) {
+                Map<String, Object> structuredResponse = parseTableResponse(botResponse);
+                botMsg.put("type", "table");
+                botMsg.put("content", structuredResponse.get("text"));
+                botMsg.put("tableData", structuredResponse.get("tableData"));
+            } else {
+                botMsg.put("type", "text");
+                botMsg.put("content", botResponse);
+            }
+            
+            messages.add(botMsg);
+            
+            session.put("updatedAt", OffsetDateTime.now().toString());
+            userRecord.setUpdatedAt(OffsetDateTime.now());
+            chatSessionRepository.save(userRecord);
+            
+            return ((Number) session.get("sessionId")).longValue();
+        } catch (Exception e) {
+            System.err.println("[ChatBot] Error saving quick chat history: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+    
     @Cacheable(value = "chatbotResponses", key = "#message + '_' + #email + '_' + #role")
     private String generateResponse(String message, String email, String name, String role) {
         try {
@@ -269,6 +371,13 @@ public class ChatBotService {
             System.out.println("\n[ChatBot] ===== AI Processing (Cache MISS) =====");
             System.out.println("[ChatBot] User: " + name + " (" + email + ")");
             System.out.println("[ChatBot] Query: " + message);
+            
+            // Quick response for common queries - bypass AI
+            String quickResponse = getQuickResponse(message, email, name, role);
+            if (quickResponse != null) {
+                System.out.println("[ChatBot] Quick response (no AI): " + quickResponse);
+                return quickResponse;
+            }
             
             String intentPrompt = String.format("""
                 Analyze this user query and respond with ONLY ONE of these function names:
@@ -674,4 +783,36 @@ public class ChatBotService {
             throw new RuntimeException("Failed to delete session: " + e.getMessage(), e);
         }
     }
-}
+    @Transactional
+    public void deleteAllSessions(String email) {
+        try {
+            System.out.println("[ChatBot] Attempting to delete all sessions for email: " + email);
+            
+            ChatSession userRecord = chatSessionRepository.findByEmailId(email)
+                .orElseThrow(() -> new RuntimeException("User record not found"));
+            
+            userRecord.getSessions().clear();
+            chatSessionRepository.save(userRecord);
+            
+            System.out.println("[ChatBot] All sessions deleted successfully");
+        } catch (Exception e) {
+            System.err.println("[ChatBot] Error deleting all sessions: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to delete all sessions: " + e.getMessage(), e);
+        }
+    }
+    
+    @Transactional
+    public void clearAllChatHistory() {
+        try {
+            System.out.println("[ChatBot] Clearing all chat history for all employees");
+            chatSessionRepository.deleteAll();
+            System.out.println("[ChatBot] All chat history cleared successfully");
+        } catch (Exception e) {
+            System.err.println("[ChatBot] Error clearing all chat history: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to clear all chat history: " + e.getMessage(), e);
+        }
+    }
+
+} 

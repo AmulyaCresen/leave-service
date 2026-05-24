@@ -18,7 +18,7 @@ public class AsyncMailSender {
     @Value("${app.mail.sender}")
     private String senderEmail;
 
-    @Async
+    @Async("mailExecutor")
     public void send(String to, String subject, String html) {
         try {
             var msg = mailSender.createMimeMessage();

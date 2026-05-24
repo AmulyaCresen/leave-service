@@ -48,7 +48,7 @@ class TaskModelTest {
     void task_allArgsConstructor() {
         LocalDateTime now = LocalDateTime.now();
         Task task = new Task(1L, "emp@test.com", "Title", "Desc", "TODO", "LOW",
-                now, "mgr@test.com", now, now);
+                now, "mgr@test.com", now, now, null, null);
 
         assertEquals(1L, task.getId());
         assertEquals("emp@test.com", task.getEmailId());
@@ -64,9 +64,9 @@ class TaskModelTest {
     void task_equalsAndHashCode() {
         LocalDateTime now = LocalDateTime.now();
         Task task1 = new Task(1L, "emp@test.com", "Title", "Desc", "PENDING", "HIGH",
-                now, "mgr@test.com", now, now);
+                now, "mgr@test.com", now, now, null, null);
         Task task2 = new Task(1L, "emp@test.com", "Title", "Desc", "PENDING", "HIGH",
-                now, "mgr@test.com", now, now);
+                now, "mgr@test.com", now, now, null, null);
 
         assertEquals(task1, task2);
         assertEquals(task1.hashCode(), task2.hashCode());

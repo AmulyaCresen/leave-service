@@ -1,5 +1,7 @@
 package com.leave_service.config;
 
+import com.leave_service.dto.CreateLeaveRequest;
+import com.leave_service.model.Leave;
 import com.leave_service.model.LeaveType;
 import com.leave_service.service.LeaveService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +31,8 @@ public class ChatBotFunctions {
     public record LeaveTypeInfo(String leaveName, Integer maxDays) {}
     public record LeaveTypeBalance(String leaveName, Integer maxDays, Integer used, Integer remaining) {}
     public record LeaveBalanceInfo(Map<String, LeaveTypeBalance> balances) {}
+    public record ApplyLeaveInput(String leaveType, String fromDate, String toDate, String reason) {}
+    public record ApplyLeaveResult(boolean success, String message, Integer leaveId) {}
 
 
     @Bean
@@ -95,6 +99,70 @@ public class ChatBotFunctions {
             return leaveService.getAllLeaveTypes().stream()
                 .map(lt -> new LeaveTypeInfo(lt.getLeaveName(), lt.getMaxDays()))
                 .collect(Collectors.toList());
+        };
+    }
+
+    @Bean
+    @Description("Apply for leave by providing leave type, from date (YYYY-MM-DD), to date (YYYY-MM-DD), and reason. Returns success status and leave ID if successful.")
+    public Function<ApplyLeaveInput, ApplyLeaveResult> applyForLeave() {
+        System.out.println("[Spring] Creating applyForLeave bean");
+        return input -> {
+            String email = CTX_EMAIL.get();
+            System.out.println("[Function] applyForLeave called for: " + email);
+            System.out.println("  - leaveType: " + input.leaveType());
+            System.out.println("  - fromDate: " + input.fromDate());
+            System.out.println("  - toDate: " + input.toDate());
+            System.out.println("  - reason: " + input.reason());
+            
+            try {
+                // Validate inputs
+                if (input.leaveType() == null || input.leaveType().trim().isEmpty()) {
+                    return new ApplyLeaveResult(false, "Leave type is required", null);
+                }
+                if (input.fromDate() == null || input.fromDate().trim().isEmpty()) {
+                    return new ApplyLeaveResult(false, "From date is required (format: YYYY-MM-DD)", null);
+                }
+                if (input.toDate() == null || input.toDate().trim().isEmpty()) {
+                    return new ApplyLeaveResult(false, "To date is required (format: YYYY-MM-DD)", null);
+                }
+                if (input.reason() == null || input.reason().trim().isEmpty()) {
+                    return new ApplyLeaveResult(false, "Reason is required", null);
+                }
+
+                // Create leave request
+                CreateLeaveRequest leaveRequest = new CreateLeaveRequest();
+                leaveRequest.setLeaveType(input.leaveType().trim());
+                leaveRequest.setFromDate(input.fromDate().trim());
+                leaveRequest.setToDate(input.toDate().trim());
+                leaveRequest.setReason(input.reason().trim());
+                leaveRequest.setDayType("FULL_DAY");
+                leaveRequest.setHalfDaySession("");
+                leaveRequest.setComments("Applied via chat assistant");
+                leaveRequest.setManagerEmail(null);
+                leaveRequest.setDays(null);
+
+                // Apply leave
+                Leave result = leaveService.createLeave(leaveRequest, email);
+                Long leaveId = result.getId();
+                
+                System.out.println("[Function] Leave applied successfully with ID: " + leaveId);
+                return new ApplyLeaveResult(true, 
+                    "Leave application submitted successfully! Your leave ID is " + leaveId + 
+                    ". You can track its status in the Leave History section.", 
+                    leaveId.intValue());
+                    
+            } catch (Exception e) {
+                System.err.println("[Function] applyForLeave ERROR: " + e.getMessage());
+                e.printStackTrace();
+                String errorMsg = e.getMessage();
+                if (errorMsg != null && errorMsg.toLowerCase().contains("overlap")) {
+                    return new ApplyLeaveResult(false, "Cannot apply: You already have a leave overlapping these dates.", null);
+                } else if (errorMsg != null && errorMsg.toLowerCase().contains("balance")) {
+                    return new ApplyLeaveResult(false, "Cannot apply: Insufficient leave balance for this leave type.", null);
+                } else {
+                    return new ApplyLeaveResult(false, "Failed to apply for leave: " + (errorMsg != null ? errorMsg : "Unknown error"), null);
+                }
+            }
         };
     }
 }

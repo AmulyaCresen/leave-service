@@ -10,7 +10,11 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 @Entity
-@Table(name = "leave", schema = "leave")
+@Table(name = "leave", schema = "leave", indexes = {
+    @Index(name = "idx_leave_email_id", columnList = "email_id"),
+    @Index(name = "idx_leave_manager_email", columnList = "manager_email"),
+    @Index(name = "idx_leave_from_to_date", columnList = "from_date, to_date")
+})
 @Getter
 @Setter
 @NoArgsConstructor

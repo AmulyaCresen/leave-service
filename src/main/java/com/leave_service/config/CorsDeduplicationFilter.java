@@ -15,12 +15,7 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * Runs at highest precedence so it wraps the response before any other filter
- * (including Flowable's CorsFilter) can write headers. Ensures each
- * Access-Control-* header is written only once, preventing the duplicate
- * CORS header that Flowable + Spring Cloud Gateway would otherwise produce.
- */
+
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorsDeduplicationFilter implements Filter {

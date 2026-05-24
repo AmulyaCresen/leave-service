@@ -18,6 +18,8 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Async;
@@ -122,9 +124,11 @@ public class LeaveService {
         trail.add(entry);
         leave.setTrail(trail);
     }
+    @Cacheable(value = "holidays", unless = "#result == null || #result.isEmpty()")
     public List<Holiday> getAllHolidays() {
         return holidayRepository.findAll();
     }
+    @CacheEvict(value = "holidays", allEntries = true)
     public Holiday createHoliday(HolidayRequest request) {
         LocalDate date = LocalDate.parse(request.getDate());
         if (holidayRepository.findByDate(date).isPresent())
@@ -134,6 +138,7 @@ public class LeaveService {
         h.setDate(date);
         return holidayRepository.save(h);
     }
+    @CacheEvict(value = "holidays", allEntries = true)
     public Holiday updateHoliday(Long id, HolidayRequest request) {
         Holiday h = holidayRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Holiday not found"));
@@ -145,6 +150,7 @@ public class LeaveService {
         h.setDate(date);
         return holidayRepository.save(h);
     }
+    @CacheEvict(value = "holidays", allEntries = true)
     @Transactional
     public void deleteHoliday(Long id) {
         if (!holidayRepository.existsById(id))
@@ -155,6 +161,7 @@ public class LeaveService {
             "SELECT setval('leave.holidays_id_seq', COALESCE((SELECT MAX(id) FROM leave.holidays), 0) + 1, false)"
         ).getSingleResult();
     }
+    @Cacheable(value = "leaveTypes", unless = "#result == null || #result.isEmpty()")
     public List<LeaveType> getAllLeaveTypes() {
         return leaveTypeRepository.findAll();
     }
@@ -164,6 +171,7 @@ public class LeaveService {
     public boolean leaveUniqueNameExists(String uniqueName) {
         return leaveTypeRepository.findByLeaveUniqueName(uniqueName).isPresent();
     }
+    @CacheEvict(value = "leaveTypes", allEntries = true)
     public LeaveType createLeaveType(CreateLeaveTypeRequest request) {
         if (leaveTypeRepository.findByLeaveName(request.getLeaveName()).isPresent())
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Leave name already exists");
@@ -179,6 +187,7 @@ public class LeaveService {
         log.info("[LEAVE] Created leave type: {}", saved.getLeaveName());
         return saved;
     }
+    @CacheEvict(value = "leaveTypes", allEntries = true)
     public LeaveType updateLeaveType(Integer id, CreateLeaveTypeRequest request) {
         LeaveType lt = leaveTypeRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Leave type not found"));
@@ -197,6 +206,7 @@ public class LeaveService {
         log.info("[LEAVE] Updated leave type id={}", id);
         return saved;
     }
+    @CacheEvict(value = "leaveTypes", allEntries = true)
     public void deleteLeaveType(Integer id) {
         if (!leaveTypeRepository.existsById(id))
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Leave type not found");
@@ -270,135 +280,89 @@ public class LeaveService {
     }
 
     public List<Leave> getReviewedLeavesByReviewer(String reviewerEmail) {
-        log.info("[getReviewedLeavesByReviewer] Getting reviewed leaves for reviewer: {}", reviewerEmail);
-        
-        List<Leave> allLeaves = hydrateAll(leaveRepository.findAll());
-        log.info("[getReviewedLeavesByReviewer] Total leaves in database: {}", allLeaves.size());
-        
-        // Debug: Log some trail entries to see what's in the database
-        allLeaves.stream().limit(3).forEach(leave -> {
-            log.info("[getReviewedLeavesByReviewer] Sample leave {} trail: {}", leave.getId(), leave.getTrail());
-        });
-        
-        List<Leave> filteredLeaves = allLeaves.stream()
-            .filter(l -> !reviewerEmail.equals(l.getEmailId())) // Exclude reviewer's own leaves
+        List<Leave> filteredLeaves = hydrateAll(leaveRepository.findAll()).stream()
+            .filter(l -> !reviewerEmail.equals(l.getEmailId()))
             .filter(l -> {
                 List<Map<String, String>> trail = l.getTrail();
-                if (trail == null || trail.isEmpty()) {
-                    log.debug("[getReviewedLeavesByReviewer] Leave {} has no trail", l.getId());
-                    return false;
-                }
-                
-                boolean reviewedByMe = trail.stream().anyMatch(entry -> {
-                    String trailReviewer = entry.get(LeaveConstants.TRAIL_REVIEWED_BY);
-                    boolean matches = reviewerEmail.equals(trailReviewer);
-                    if (matches) {
-                        log.info("[getReviewedLeavesByReviewer] Found match for leave {} - reviewer: {}, trail entry: {}", 
-                            l.getId(), reviewerEmail, entry);
-                    }
-                    return matches;
-                });
-                
-                if (reviewedByMe) {
-                    log.info("[getReviewedLeavesByReviewer] Including leave {} for reviewer {}", l.getId(), reviewerEmail);
-                } else {
-                    log.debug("[getReviewedLeavesByReviewer] Excluding leave {} - not reviewed by {}", l.getId(), reviewerEmail);
-                }
-                
-                return reviewedByMe;
+                if (trail == null || trail.isEmpty()) return false;
+                return trail.stream().anyMatch(entry -> reviewerEmail.equals(entry.get(LeaveConstants.TRAIL_REVIEWED_BY)));
             })
             .collect(Collectors.toList());
-            
-        log.info("[getReviewedLeavesByReviewer] Returning {} reviewed leaves for reviewer: {}", 
-            filteredLeaves.size(), reviewerEmail);
+        log.debug("[getReviewedLeavesByReviewer] Returning {} reviewed leaves for reviewer: {}", filteredLeaves.size(), reviewerEmail);
         return filteredLeaves;
     }
 
     public Map<String, Object> getManagerLoggedLeaves(String managerEmail) {
-        log.info("[getManagerLoggedLeaves] Getting logged leaves for manager: {}", managerEmail);
-        
         return employeeLeaveRepository.findByEmailId(managerEmail)
             .map(empLeave -> {
                 Map<String, Object> leaves = empLeave.getLeaves();
                 if (leaves != null && leaves.containsKey("approved_leaves")) {
                     List<Map<String, Object>> approvedLeaves = (List<Map<String, Object>>) leaves.get("approved_leaves");
-                    
-                    // Enrich with trail data from leave table
+                    // Batch-fetch all leaves in one query to avoid N+1
+                    List<Long> leaveIds = approvedLeaves.stream()
+                        .map(r -> ((Number) r.get("leaveId")).longValue())
+                        .collect(Collectors.toList());
+                    Map<Long, Leave> leaveMap = leaveRepository.findAllById(leaveIds).stream()
+                        .peek(this::hydrateTransients)
+                        .collect(Collectors.toMap(Leave::getId, l -> l));
                     List<Map<String, Object>> enrichedLeaves = approvedLeaves.stream()
                         .map(record -> {
                             Long leaveId = ((Number) record.get("leaveId")).longValue();
-                            log.info("[getManagerLoggedLeaves] Fetching leave ID: {}", leaveId);
-                            Leave fullLeave = leaveRepository.findById(leaveId).orElse(null);
+                            Leave fullLeave = leaveMap.get(leaveId);
                             if (fullLeave != null) {
-                                hydrateTransients(fullLeave);
-                                log.info("[getManagerLoggedLeaves] Leave {} has {} trail entries", leaveId, 
-                                    fullLeave.getTrail() != null ? fullLeave.getTrail().size() : 0);
                                 Map<String, Object> enriched = new HashMap<>(record);
                                 enriched.put("trail", fullLeave.getTrail());
                                 enriched.put("days", fullLeave.getDays());
                                 enriched.put("reason", fullLeave.getReason());
                                 return enriched;
-                            } else {
-                                log.warn("[getManagerLoggedLeaves] Leave {} not found in database", leaveId);
                             }
                             return record;
                         })
                         .collect(Collectors.toList());
-                    
                     Map<String, Object> result = new HashMap<>();
                     result.put("approved_leaves", enrichedLeaves);
                     result.put("managerName", empLeave.getFullName());
                     result.put("managerEmail", empLeave.getEmailId());
-                    log.info("[getManagerLoggedLeaves] Found {} approved leaves for manager: {}", 
-                        enrichedLeaves.size(), managerEmail);
                     return result;
                 }
-                log.info("[getManagerLoggedLeaves] No approved leaves found for manager: {}", managerEmail);
                 return new HashMap<String, Object>();
             })
             .orElse(new HashMap<>());
     }
 
     public Map<String, Object> getAdminLoggedLeaves(String adminEmail) {
-        log.info("[getAdminLoggedLeaves] Getting logged leaves for admin: {}", adminEmail);
-        
         return employeeLeaveRepository.findByEmailId(adminEmail)
             .map(empLeave -> {
                 Map<String, Object> leaves = empLeave.getLeaves();
                 if (leaves != null && leaves.containsKey("approved_leaves")) {
                     List<Map<String, Object>> approvedLeaves = (List<Map<String, Object>>) leaves.get("approved_leaves");
-                    
-                    // Enrich with trail data from leave table
+                    // Batch-fetch all leaves in one query to avoid N+1
+                    List<Long> leaveIds = approvedLeaves.stream()
+                        .map(r -> ((Number) r.get("leaveId")).longValue())
+                        .collect(Collectors.toList());
+                    Map<Long, Leave> leaveMap = leaveRepository.findAllById(leaveIds).stream()
+                        .peek(this::hydrateTransients)
+                        .collect(Collectors.toMap(Leave::getId, l -> l));
                     List<Map<String, Object>> enrichedLeaves = approvedLeaves.stream()
                         .map(record -> {
                             Long leaveId = ((Number) record.get("leaveId")).longValue();
-                            log.info("[getAdminLoggedLeaves] Fetching leave ID: {}", leaveId);
-                            Leave fullLeave = leaveRepository.findById(leaveId).orElse(null);
+                            Leave fullLeave = leaveMap.get(leaveId);
                             if (fullLeave != null) {
-                                hydrateTransients(fullLeave);
-                                log.info("[getAdminLoggedLeaves] Leave {} has {} trail entries", leaveId, 
-                                    fullLeave.getTrail() != null ? fullLeave.getTrail().size() : 0);
                                 Map<String, Object> enriched = new HashMap<>(record);
                                 enriched.put("trail", fullLeave.getTrail());
                                 enriched.put("days", fullLeave.getDays());
                                 enriched.put("reason", fullLeave.getReason());
                                 return enriched;
-                            } else {
-                                log.warn("[getAdminLoggedLeaves] Leave {} not found in database", leaveId);
                             }
                             return record;
                         })
                         .collect(Collectors.toList());
-                    
                     Map<String, Object> result = new HashMap<>();
                     result.put("approved_leaves", enrichedLeaves);
                     result.put("adminName", empLeave.getFullName());
                     result.put("adminEmail", empLeave.getEmailId());
-                    log.info("[getAdminLoggedLeaves] Found {} approved leaves for admin: {}", 
-                        enrichedLeaves.size(), adminEmail);
                     return result;
                 }
-                log.info("[getAdminLoggedLeaves] No approved leaves found for admin: {}", adminEmail);
                 return new HashMap<String, Object>();
             })
             .orElse(new HashMap<>());
@@ -511,7 +475,7 @@ public class LeaveService {
             .orElse(new HashMap<>());
     }
 
-    @Async
+    @Async("workflowExecutor")
     public void startLeaveProcessAsync(Leave leave, String managerEmail, String adminEmail) {
         leaveProcessService.startLeaveProcess(leave, managerEmail, adminEmail);
     }
